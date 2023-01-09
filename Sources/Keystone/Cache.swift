@@ -46,7 +46,7 @@ import Foundation
     var eventCount: Int
     
     /// The state of the aggregators within this interval.
-    var aggregators: [EventAggregator]
+    var aggregators: [String: EventAggregator]
     
     /// IDs of known aggregators.
     var knownAggregators: Set<String>
@@ -56,7 +56,7 @@ import Foundation
          processedEventInterval: DateInterval? = nil,
          eventCount: Int = 0,
          knownAggregators: Set<String> = [],
-         aggregators: [EventAggregator]) {
+         aggregators: [String: EventAggregator]) {
         self.interval = interval
         self.processedEventInterval = processedEventInterval ?? .init(start: interval.start, duration: 0)
         self.eventCount = eventCount
@@ -68,7 +68,7 @@ import Foundation
     func reset() {
         self.processedEventInterval = .init(start: interval.start, duration: 0)
         self.eventCount = 0
-        self.aggregators.forEach { $0.reset() }
+        self.aggregators.forEach { $0.value.reset() }
         self.knownAggregators = []
     }
 }
@@ -82,8 +82,8 @@ extension IntervalAggregatorState {
         self.eventCount += 1
         
         // Update aggregators
-        for aggregator in self.aggregators {
-            guard let columns = aggregatorColumns[aggregator.id] else {
+        for (id, aggregator) in self.aggregators {
+            guard let columns = aggregatorColumns[id] else {
                 continue
             }
             
@@ -101,24 +101,23 @@ extension IntervalAggregatorState {
     /// The opaque encodable state object.
     func codableState() throws -> KeystoneAggregatorState {
         KeystoneAggregatorState(interval: interval,
-                             processedEventInterval: self.processedEventInterval,
-                             eventCount: self.eventCount,
-                             knownAggregators: knownAggregators,
-                             aggregators: try aggregators.map { $0.final }.map { .init(id: $0.id, data: try $0.encode()) })
+                                processedEventInterval: self.processedEventInterval,
+                                eventCount: self.eventCount,
+                                knownAggregators: knownAggregators,
+                                aggregators: try aggregators.map { .init(id: $0.key, data: try $0.value.final.encode()) })
     }
     
     /// Initialize from a codable state.
-    convenience init(from codableState: KeystoneAggregatorState, aggregators: [EventAggregator]) throws {
+    convenience init(from codableState: KeystoneAggregatorState, aggregators: [String: EventAggregator]) throws {
         self.init(interval: codableState.interval,
                   processedEventInterval: codableState.processedEventInterval,
                   knownAggregators: codableState.knownAggregators,
                   aggregators: aggregators)
         
-        let finalAggregators = aggregators.map { $0.final }
         for aggregatorState in codableState.aggregators {
             guard
                 let data = aggregatorState.data,
-                let aggregator = (finalAggregators.first { $0.id == aggregatorState.id })
+                let aggregator = aggregators[aggregatorState.id]?.final
             else {
                 continue
             }

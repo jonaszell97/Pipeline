@@ -41,10 +41,10 @@ public struct EventCategoryBuilder {
 
 public extension EventCategoryBuilder {
     /// Register an event column.
-    @discardableResult mutating func registerColumn(name columnName: String, aggregators: @autoclosure @escaping () -> [any EventAggregator])
+    @discardableResult mutating func registerColumn(name columnName: String, aggregators: [String: () -> any EventAggregator])
         -> EventCategoryBuilder
     {
-        let column = EventColumn(name: columnName, categoryName: self.name, instantiateAggregators: aggregators)
+        let column = EventColumn(name: columnName, categoryName: self.name, aggregators: aggregators)
         self.columns.append(column)
         
         return self
@@ -79,12 +79,12 @@ public struct EventColumn {
     public let categoryName: String
     
     /// The data aggregators for this column.
-    internal let instantiateAggregators: () -> [any EventAggregator]
+    internal let aggregators: [String: () -> any EventAggregator]
     
     /// Memberwise initializer.
-    internal init(name: String, categoryName: String, instantiateAggregators: @escaping () -> [any EventAggregator]) {
+    internal init(name: String, categoryName: String, aggregators: [String: () -> any EventAggregator]) {
         self.name = name
         self.categoryName = categoryName
-        self.instantiateAggregators = instantiateAggregators
+        self.aggregators = aggregators
     }
 }

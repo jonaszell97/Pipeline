@@ -13,13 +13,15 @@ final class KeystoneTests: XCTestCase {
         
         builder.registerCategory(name: "ExampleEvent") { category in
             category.registerColumn(name: "MyColumn1", aggregators: [
-                NumericStatsAggregator(id: "X"),
-                PredicateAggregator(id: "Y") {
-                    guard case .text(let value) = $0 else {
-                        return false
+                "X": { NumericStatsAggregator() },
+                "Y": {
+                    PredicateAggregator() {
+                        guard case .text(let value) = $0 else {
+                            return false
+                        }
+                        
+                        return value == ":)"
                     }
-                    
-                    return value == ":)"
                 }
             ])
         }
