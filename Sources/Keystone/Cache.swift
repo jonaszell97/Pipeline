@@ -73,30 +73,6 @@ import Foundation
     }
 }
 
-// MARK: Event processing
-
-extension IntervalAggregatorState {
-    /// Process an event.
-    func processEvent(_ event: KeystoneEvent, aggregatorColumns: [String: [EventColumn]]) async throws {
-        // Add to the event list
-        self.eventCount += 1
-        
-        // Update aggregators
-        for (id, aggregator) in self.aggregators {
-            guard let columns = aggregatorColumns[id] else {
-                continue
-            }
-            
-            for column in columns {
-                _ = aggregator.addEvent(event, column: column)
-            }
-        }
-        
-        // Update event interval
-        self.processedEventInterval.expand(toContain: event.date)
-    }
-}
-
 extension IntervalAggregatorState {
     /// The opaque encodable state object.
     func codableState() throws -> KeystoneAggregatorState {

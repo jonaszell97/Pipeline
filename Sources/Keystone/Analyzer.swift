@@ -138,12 +138,12 @@ public extension KeystoneAnalyzer {
     }
     
     /// Find all aggregators belonging to a column in the given interval.
-    func findAggregators(for category: String, in interval: DateInterval) async -> [EventAggregator] {
+    func findAggregators(for category: String, in interval: DateInterval) async -> [String: EventAggregator] {
         guard let state = try? await self.state(in: interval) else {
-            return []
+            return [:]
         }
         
-        return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0.categoryName == category } ?? false }.values.map { $0 }
+        return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0.categoryName == category } ?? false }
     }
     
     /// Load new events.
@@ -200,7 +200,7 @@ extension KeystoneAnalyzer {
         let totalEvents = events.count
         
         // Update historical and accumulated states for each event
-        var modifiedStates = Set<IntervalAggregatorState>()
+        var modifiedStates: Set<IntervalAggregatorState> = [self.state.accumulatedState]
         for event in events {
             assert(event.date < now, "encountered an event from the future")
             
@@ -214,8 +214,9 @@ extension KeystoneAnalyzer {
             let interval = Self.interval(containing: event.date)
             let state = try await self.state(in: interval)
             
-            try await state.processEvent(event, aggregatorColumns: self.aggregatorColumns)
-            try await self.state.accumulatedState.processEvent(event, aggregatorColumns: self.aggregatorColumns)
+            try await state.processEvent(event, aggregatorColumns: self.aggregatorColumns, isNewEvent: true)
+            try await self.state.accumulatedState.processEvent(event, aggregatorColumns: self.aggregatorColumns,
+                                                               isNewEvent: true)
             
             modifiedStates.insert(state)
         }
@@ -229,19 +230,59 @@ extension KeystoneAnalyzer {
         // Persist the events
         await persistEvents(events)
         
-        var persistedStates = 0
-        let totalStatesToPersist = modifiedStates.count + 1
+        // Persist the modified states
+        try await self.persistAggregatorStates(modifiedStates)
+        
+        await updateStatus(previousStatus)
+    }
+    
+    /// Initialize new aggregators with all historical events.
+    func processHistoricalEvents(_ events: [KeystoneEvent], forAggregatorIds ids: Set<String>) async throws {
+        let aggregatorColumns = self.aggregatorColumns.filter { ids.contains($0.key) }
+        
+        let now = Date.now
+        let previousStatus = self.status
+        
+        var processedEvents = 0
+        let totalEvents = events.count
+        
+        // Update historical and accumulated states for each event
+        var modifiedStates: Set<IntervalAggregatorState> = [self.state.accumulatedState]
+        for event in events {
+            assert(event.date < now, "encountered an event from the future")
+            
+            await updateStatus(.processingEvents(progress: Double(processedEvents) / Double(totalEvents)))
+            processedEvents += 1
+            
+            let interval = Self.interval(containing: event.date)
+            let state = try await self.state(in: interval)
+            
+            try await state.processEvent(event, aggregatorColumns: aggregatorColumns, isNewEvent: false)
+            try await self.state.accumulatedState.processEvent(event, aggregatorColumns: aggregatorColumns,
+                                                               isNewEvent: false)
+            
+            modifiedStates.insert(state)
+        }
+        
+        await updateStatus(.persistingState(progress: 0))
         
         // Persist the modified states
-        try await self.persistState(self.state.accumulatedState)
-        for state in modifiedStates {
+        try await self.persistAggregatorStates(modifiedStates)
+        
+        await updateStatus(previousStatus)
+    }
+    
+    /// Persist the states of modified aggregators.
+    func persistAggregatorStates(_ states: Set<IntervalAggregatorState>) async throws {
+        var persistedStates = 0
+        let totalStatesToPersist = states.count
+        
+        for state in states {
             await updateStatus(.persistingState(progress: Double(persistedStates + 1) / Double(totalStatesToPersist)))
             persistedStates += 1
             
             try await self.persistState(state)
         }
-        
-        await updateStatus(previousStatus)
     }
     
     /// Load and process all events.
@@ -279,31 +320,57 @@ extension KeystoneAnalyzer {
     
     /// Check if there are new, uninitialized aggregators.
     func checkForNewAggregators() async throws {
-        let uninitializedAggregators = state.accumulatedState.aggregators.filter { !state.accumulatedState.knownAggregators.contains($0.key) }
+        let uninitializedAggregators = Set(state.accumulatedState.aggregators.keys.filter { !state.accumulatedState.knownAggregators.contains($0) })
         guard !uninitializedAggregators.isEmpty else {
             return
         }
         
-        config.log?(.debug, "resetting state because of new aggregators: [\(uninitializedAggregators.map { $0.key }.joined(separator: ", "))]")
+        config.log?(.debug, "updating new aggregators: [\(uninitializedAggregators.joined(separator: ", "))]")
         
         // No need to fetch the events from the backend again
         var intervals = self.state.historicalStates.keys.map { $0 }
         intervals.append(state.currentState.interval)
         
-        self.state.reset()
-        
         // Register the events we saved from before the reset
+        var allEvents = [KeystoneEvent]()
         for interval in intervals {
             async let events = await self.loadEvents(in: interval)
             guard let events = await events else {
                 continue
             }
             
-            try await self.processEvents(events)
+            allEvents.append(contentsOf: events)
         }
+        
+        allEvents.sort { $0.date < $1.date }
+        
+        try await self.processHistoricalEvents(allEvents, forAggregatorIds: uninitializedAggregators)
     }
 }
 
+fileprivate extension IntervalAggregatorState {
+    /// Process an event.
+    func processEvent(_ event: KeystoneEvent, aggregatorColumns: [String: [EventColumn]], isNewEvent: Bool) async throws {
+        // Update aggregators
+        for (id, aggregator) in self.aggregators {
+            guard let columns = aggregatorColumns[id] else {
+                continue
+            }
+            
+            for column in columns {
+                _ = aggregator.addEvent(event, column: column)
+            }
+        }
+        
+        if isNewEvent {
+            // Add to the event list
+            self.eventCount += 1
+            
+            // Update event interval
+            self.processedEventInterval.expand(toContain: event.date)
+        }
+    }
+}
 // MARK: Initialization
 
 extension KeystoneAnalyzer {
