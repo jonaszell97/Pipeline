@@ -146,12 +146,7 @@ extension CloudKitBackend {
     
     /// Load all records created after a given date.
     private func loadNewRecords(in interval: DateInterval, updateProgress: @escaping (Int) -> Void) async throws -> [CKRecord] {
-        let eventDateQuery = "eventDate >= %@ AND eventDate <= %@"
-        let creationDateQuery = "creationDate >= %@ AND creationDate <= %@"
-        
-        let predicate = NSPredicate(format: "(\(eventDateQuery)) OR (\(creationDateQuery))",
-                                    NSDate(timeIntervalSinceReferenceDate: interval.start.timeIntervalSinceReferenceDate),
-                                    NSDate(timeIntervalSinceReferenceDate: interval.end.timeIntervalSinceReferenceDate),
+        let predicate = NSPredicate(format: "eventDate >= %@ AND eventDate <= %@",
                                     NSDate(timeIntervalSinceReferenceDate: interval.start.timeIntervalSinceReferenceDate),
                                     NSDate(timeIntervalSinceReferenceDate: interval.end.timeIntervalSinceReferenceDate))
         
