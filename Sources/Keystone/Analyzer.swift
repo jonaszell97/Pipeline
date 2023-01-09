@@ -115,6 +115,13 @@ public enum AnalyzerStatus {
     
     /// Reset the analytics state.
     public func reset() async throws {
+        for (_, state) in state.historicalStates {
+            await self.removeState(state)
+        }
+        
+        await self.removeState(state.currentState)
+        await self.removeState(state.accumulatedState)
+        
         self.state.reset()
         
         // Check if the current state needs to be updated
@@ -387,6 +394,12 @@ extension KeystoneAnalyzer {
         // Persist
         let key = KeystoneAggregatorState.key(for: state.interval)
         await delegate.persist(try state.codableState(), withKey: key)
+    }
+    
+    /// Persist a time interval state.
+    func removeState(_ state: IntervalAggregatorState) async {
+        let key = KeystoneAggregatorState.key(for: state.interval)
+        await delegate.persist(Optional<KeystoneAggregatorState>.none, withKey: key)
     }
     
     /// Check if the current state needs to be updated.
