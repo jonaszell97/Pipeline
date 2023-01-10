@@ -44,28 +44,42 @@ public final class CloudKitBackend: KeystoneBackend {
     /// The iCloud container.
     let container: CKContainer
     
+    /// The user's iCloud account status.
+    public let accountStatus: CKAccountStatus
+    
     /// The unique iCloud record ID for the user.
-    var iCloudRecordID: String?
+    let iCloudRecordID: String?
     
     /// Default initializer.
     public init(config: KeystoneConfig,
                 containerIdentifier: String,
-                tableName: String) {
+                tableName: String) async {
         self.config = config
         self.containerIdentifier = containerIdentifier
         self.tableName = tableName
         
-        self.container = .init(identifier: containerIdentifier)
-        self.iCloudRecordID = nil
+        let container = CKContainer(identifier: containerIdentifier)
+        self.container = container
         
-        self.container.fetchUserRecordID(completionHandler: { (recordID, error) in
-            if let error {
-                config.log?(.fault, "error fetching user record id: \(error.localizedDescription)")
-                return
+        self.iCloudRecordID = await withCheckedContinuation { continuation in
+            container.fetchUserRecordID(completionHandler: { (recordID, error) in
+                if let error {
+                    config.log?(.fault, "error fetching user record id: \(error.localizedDescription)")
+                }
+                
+                continuation.resume(returning: recordID?.recordName)
+            })
+        }
+        
+        self.accountStatus = await withCheckedContinuation { continuation in
+            container.accountStatus { status, error in
+                if let error {
+                    config.log?(.error, "error fetching account status: \(error.localizedDescription)")
+                }
+                
+                continuation.resume(returning: status)
             }
-            
-            self.iCloudRecordID = recordID?.recordName
-        })
+        }
     }
 }
 
@@ -74,6 +88,11 @@ public final class CloudKitBackend: KeystoneBackend {
 extension CloudKitBackend {
     /// Submit an event to CloudKit.
     public func persist(event: KeystoneEvent) async throws {
+        guard case .available = self.accountStatus else {
+            config.log?(.debug, "early exit in persist(event:) because account status is \(self.accountStatus)")
+            throw CKError(.accountTemporarilyUnavailable)
+        }
+        
         let record = CKRecord(recordType: self.tableName, recordID: .init(recordName: event.id.uuidString))
         try populateRecord(record, for: event)
         
@@ -88,6 +107,11 @@ extension CloudKitBackend {
     public func loadEvents(in interval: DateInterval, updateStatus: @escaping (BackendStatus) -> Void)
         async throws -> [KeystoneEvent]
     {
+        guard case .available = self.accountStatus else {
+            config.log?(.debug, "early exit in loadEvents(in:updateStatus) because account status is \(self.accountStatus)")
+            throw CKError(.accountTemporarilyUnavailable)
+        }
+        
         let records = try await self.loadNewRecords(in: interval) { loadedRecords in
             updateStatus(.fetchedRecords(count: loadedRecords))
         }
@@ -99,6 +123,11 @@ extension CloudKitBackend {
     
     /// Load all events.
     public func loadAllEvents(updateStatus: @escaping (BackendStatus) -> Void) async throws -> [KeystoneEvent] {
+        guard case .available = self.accountStatus else {
+            config.log?(.debug, "early exit in loadAllEvents(updateStatus:) because account status is \(self.accountStatus)")
+            throw CKError(.accountTemporarilyUnavailable)
+        }
+        
         let records = try await self.loadNewRecords() { loadedRecords in
             updateStatus(.fetchedRecords(count: loadedRecords))
         }
