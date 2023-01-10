@@ -239,9 +239,6 @@ extension KeystoneAnalyzer {
         
         await updateStatus(.persistingState(progress: 0))
         
-        // Persist the events
-        await persistEvents(events)
-        
         // Persist the modified states
         try await self.persistAggregatorStates(modifiedStates)
         
@@ -329,6 +326,8 @@ extension KeystoneAnalyzer {
         
         // Use as many events from cache as possible
         if var cachedEvents = await self.loadEventsFromCache(in: interval) {
+            config.log?(.debug, "loaded \(cachedEvents.count) events from cache")
+            
             let cachedEventsInterval = DateInterval(start: cachedEvents.first!.date, end: cachedEvents.last!.date)
             
             // Load earlier events
@@ -337,6 +336,10 @@ extension KeystoneAnalyzer {
                                                                  updateStatus: updateStatus)
                 
                 cachedEvents.insert(contentsOf: earlierEvents, at: cachedEvents.startIndex)
+                
+                // Persist the events
+                await persistEvents(earlierEvents)
+                config.log?(.debug, "loaded \(earlierEvents.count) earlier events")
             }
             
             // Load later events
@@ -345,6 +348,10 @@ extension KeystoneAnalyzer {
                                                                updateStatus: updateStatus)
                 
                 cachedEvents.append(contentsOf: laterEvents)
+                
+                // Persist the events
+                await persistEvents(laterEvents)
+                config.log?(.debug, "loaded \(laterEvents.count) later events")
             }
             
             try await self.processEvents(cachedEvents)
@@ -352,6 +359,9 @@ extension KeystoneAnalyzer {
         else {
             let events = try await backend.loadEvents(in: interval, updateStatus: updateStatus)
             try await self.processEvents(events)
+            
+            // Persist the events
+            await persistEvents(events)
         }
     }
     
@@ -395,7 +405,7 @@ fileprivate extension IntervalAggregatorState {
             }
             
             for column in columns {
-                guard event.category == column.name else {
+                guard event.category == column.categoryName else {
                     continue
                 }
                 
@@ -551,6 +561,10 @@ extension KeystoneAnalyzer {
     
     /// Load events in the given interval from cache.
     func loadEventsFromCache(in interval: DateInterval) async -> [KeystoneEvent]? {
+        let previousStatus = self.status
+        
+        await updateStatus(.fetchingEvents(count: 0))
+        
         var allEvents = [KeystoneEvent]()
         var currentInterval = Self.interval(containing: interval.end)
         
@@ -567,9 +581,11 @@ extension KeystoneAnalyzer {
             }
             
             allEvents.append(contentsOf: events)
+            await updateStatus(.fetchingEvents(count: allEvents.count))
         }
         
         allEvents = allEvents.filter { interval.contains($0.date) }.sorted { $0.date < $1.date }
+        await updateStatus(previousStatus)
         
         guard !allEvents.isEmpty else {
             return nil
