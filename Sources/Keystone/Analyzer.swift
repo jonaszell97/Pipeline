@@ -189,6 +189,11 @@ public extension KeystoneAnalyzer {
     static func interval(containing date: Date) -> DateInterval {
         .init(start: date.startOfMonth, end: date.endOfMonth)
     }
+    
+    /// Get the current date interval.
+    static func isNormalized(_ interval: DateInterval) -> Bool {
+        interval == Self.interval(containing: interval.start)
+    }
 }
 
 // MARK: Event processing
@@ -307,7 +312,7 @@ extension KeystoneAnalyzer {
     
     /// Load and process new events.
     func loadAndProcessEvents(in interval: DateInterval) async throws {
-        let events = try await backend.loadEvents(in: interval) { status in
+        let updateStatus: (BackendStatus) -> Void = { status in
             switch status {
             case .ready:
                 break
@@ -322,7 +327,32 @@ extension KeystoneAnalyzer {
             }
         }
         
-        try await self.processEvents(events)
+        // Use as many events from cache as possible
+        if var cachedEvents = await self.loadEventsFromCache(in: interval) {
+            let cachedEventsInterval = DateInterval(start: cachedEvents.first!.date, end: cachedEvents.last!.date)
+            
+            // Load earlier events
+            if interval.start < cachedEventsInterval.start {
+                let earlierEvents = try await backend.loadEvents(in: .init(start: interval.start, end: cachedEventsInterval.start),
+                                                                 updateStatus: updateStatus)
+                
+                cachedEvents.insert(contentsOf: earlierEvents, at: cachedEvents.startIndex)
+            }
+            
+            // Load later events
+            if interval.end > cachedEventsInterval.end {
+                let laterEvents = try await backend.loadEvents(in: .init(start: cachedEventsInterval.end, end: interval.end),
+                                                               updateStatus: updateStatus)
+                
+                cachedEvents.append(contentsOf: laterEvents)
+            }
+            
+            try await self.processEvents(cachedEvents)
+        }
+        else {
+            let events = try await backend.loadEvents(in: interval, updateStatus: updateStatus)
+            try await self.processEvents(events)
+        }
     }
     
     /// Check if there are new, uninitialized aggregators.
@@ -517,6 +547,35 @@ extension KeystoneAnalyzer {
     /// Load the given events in the given interval.
     public func loadEvents(in interval: DateInterval) async -> [KeystoneEvent]? {
         await delegate.load([KeystoneEvent].self, withKey: Self.eventsKey(for: interval))
+    }
+    
+    /// Load events in the given interval from cache.
+    func loadEventsFromCache(in interval: DateInterval) async -> [KeystoneEvent]? {
+        var allEvents = [KeystoneEvent]()
+        var currentInterval = Self.interval(containing: interval.end)
+        
+        while currentInterval.end > interval.start {
+            defer {
+                currentInterval = Self.interval(before: currentInterval)
+            }
+            
+            guard let events = await self.loadEvents(in: currentInterval) else {
+                break
+            }
+            guard !events.isEmpty else {
+                continue
+            }
+            
+            allEvents.append(contentsOf: events)
+        }
+        
+        allEvents = allEvents.filter { interval.contains($0.date) }.sorted { $0.date < $1.date }
+        
+        guard !allEvents.isEmpty else {
+            return nil
+        }
+        
+        return allEvents
     }
 }
 
