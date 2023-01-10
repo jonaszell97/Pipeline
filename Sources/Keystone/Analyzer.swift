@@ -365,6 +365,10 @@ fileprivate extension IntervalAggregatorState {
             }
             
             for column in columns {
+                guard event.category == column.name else {
+                    continue
+                }
+                
                 _ = aggregator.addEvent(event, column: column)
             }
         }
