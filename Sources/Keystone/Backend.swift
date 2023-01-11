@@ -44,6 +44,9 @@ public final class CloudKitBackend: KeystoneBackend {
     /// The iCloud container.
     let container: CKContainer
     
+    /// The name of the column identifying user IDs.
+    let userIdColumnName: String
+    
     /// The user's iCloud account status.
     public let accountStatus: CKAccountStatus
     
@@ -53,10 +56,12 @@ public final class CloudKitBackend: KeystoneBackend {
     /// Default initializer.
     public init(config: KeystoneConfig,
                 containerIdentifier: String,
-                tableName: String) async {
+                tableName: String,
+                userIdColumnName: String = "userId") async {
         self.config = config
         self.containerIdentifier = containerIdentifier
         self.tableName = tableName
+        self.userIdColumnName = userIdColumnName
         
         let container = CKContainer(identifier: containerIdentifier)
         self.container = container
@@ -328,7 +333,7 @@ extension CloudKitBackend {
                 event.data, .init(codingPath: [], debugDescription: "encoding event data failed!"))
         }
         
-        record["analyticsID"] = config.userIdentifier
+        record[self.userIdColumnName] = config.userIdentifier
         record["category"] = event.category
         record["eventData"] = json
         record["eventDate"] = event.date
@@ -345,11 +350,11 @@ extension CloudKitBackend {
             )
         }
         
-        guard let analyticsId = record["analyticsID"] as? String else {
+        guard let userId = record[self.userIdColumnName] as? String else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
                     codingPath: [],
-                    debugDescription: "KeystoneEvent is missing analyticsId"
+                    debugDescription: "KeystoneEvent is missing userId"
                 )
             )
         }
@@ -392,10 +397,10 @@ extension CloudKitBackend {
         
         let data = try JSONDecoder().decode([String: KeystoneEventData].self, from: eventData)
         return KeystoneEvent(id: id,
-                              analyticsId: analyticsId,
-                              category: category,
-                              date: eventDate,
-                              data: data)
+                             userId: userId,
+                             category: category,
+                             date: eventDate,
+                             data: data)
     }
 }
 

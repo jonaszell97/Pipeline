@@ -249,7 +249,7 @@ open class LatestEventAggregator {
 
 extension LatestEventAggregator: EventAggregator {
     public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
-        self.latestEvents[event.analyticsId] = event
+        self.latestEvents[event.userId] = event
         return .keep
     }
     
