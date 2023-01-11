@@ -492,7 +492,7 @@ open class DateAggregator: EventAggregator {
     }
     
     open func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
-        let key = Calendar.gregorian.dateComponents(components, from: event.date)
+        let key = Calendar.reference.dateComponents(components, from: event.date)
         self.groupedValues.modify(key: key, defaultValue: []) { $0.append(event) }
         
         return .keep
@@ -534,7 +534,7 @@ open class CountingByDateAggregator: EventAggregator {
     }
     
     open func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
-        let key = Calendar.gregorian.dateComponents(components, from: event.date)
+        let key = Calendar.reference.dateComponents(components, from: event.date)
         self.groupedValues.modify(key: key, defaultValue: 0) { $0 += 1 }
         
         return .keep

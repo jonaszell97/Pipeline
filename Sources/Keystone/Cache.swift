@@ -151,7 +151,7 @@ public struct KeystoneAggregatorState {
     }
     
     private static func formatDate(_ date: Date) -> String {
-        let components = Calendar.gregorian.dateComponents([.day, .month, .year], from: date)
+        let components = Calendar.reference.dateComponents([.day, .month, .year], from: date)
         let format: (Int?, Int) -> String = { "\($0!)".leftPadding(toMinimumLength: $1, withPad: "0") }
         return "\(format(components.year, 4))\(format(components.month, 2))\(format(components.day, 2))"
     }

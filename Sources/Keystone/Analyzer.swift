@@ -47,6 +47,9 @@ public enum AnalyzerStatus {
     /// Map form aggregator IDs to the columns that contain the respective aggregator.
     let aggregatorColumns: [String: [EventColumn]]
     
+    /// States with non-normal intervals that have been queried.
+    var nonNormalStates: [DateInterval: IntervalAggregatorState]
+    
     /// Whether the state is ready to submit events.
     public var isReady: Bool {
         guard case .ready = status else {
@@ -64,6 +67,7 @@ public enum AnalyzerStatus {
         self.delegate = delegate
         self.backend = backend
         self.eventCategories = eventCategories
+        self.nonNormalStates = [:]
         
         var aggregatorColumns: [String: [EventColumn]] = [:]
         for category in eventCategories {
@@ -122,6 +126,7 @@ public enum AnalyzerStatus {
         await self.removeState(state.currentState)
         await self.removeState(state.accumulatedState)
         
+        self.nonNormalStates = [:]
         self.state.reset()
         
         // Check if the current state needs to be updated
@@ -134,27 +139,55 @@ public enum AnalyzerStatus {
 
 // MARK: Data access
 
-public extension KeystoneAnalyzer {
+extension KeystoneAnalyzer {
     /// Find an aggregator with the given ID in the selected time interval.
-    func findAggregator(withId id: String, in interval: DateInterval) async -> EventAggregator? {
-        guard let state = try? await self.state(in: interval) else {
-            return nil
+    public func findAggregator(withId id: String, in interval: DateInterval) async throws -> EventAggregator? {
+        guard Self.isNormalized(interval) else {
+            return try await self.findAggregator(withId: id, inNonNormalInterval: interval)
+        }
+        
+        let state = try await self.state(in: interval)
+        return state.aggregators.first { $0.key == id }?.value
+    }
+    
+    /// Find an aggregator with the given ID in the selected time interval.
+    func findAggregator(withId id: String, inNonNormalInterval interval: DateInterval) async throws -> EventAggregator? {
+        let state: IntervalAggregatorState
+        if let existingState = self.nonNormalStates[interval] {
+            state = existingState
+        }
+        else {
+            state = try await self.createNonNormalAggregatorState(in: interval)
         }
         
         return state.aggregators.first { $0.key == id }?.value
     }
     
     /// Find all aggregators belonging to a column in the given interval.
-    func findAggregators(for category: String, in interval: DateInterval) async -> [String: EventAggregator] {
-        guard let state = try? await self.state(in: interval) else {
-            return [:]
+    public func findAggregators(for category: String, in interval: DateInterval) async throws -> [String: EventAggregator] {
+        guard Self.isNormalized(interval) else {
+            return try await self.findAggregators(for: category, inNonNormalInterval: interval)
+        }
+        
+        let state = try await self.state(in: interval)
+        return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0.categoryName == category } ?? false }
+    }
+    
+    /// Find all aggregators belonging to a column in the given non-normal interval.
+    func findAggregators(for category: String, inNonNormalInterval interval: DateInterval) async throws -> [String: EventAggregator] {
+        let state: IntervalAggregatorState
+        if let existingState = self.nonNormalStates[interval] {
+            state = existingState
+        }
+        else {
+            state = try await self.createNonNormalAggregatorState(in: interval)
         }
         
         return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0.categoryName == category } ?? false }
     }
     
     /// Load new events.
-    func loadNewEvents() async throws {
+    public func loadNewEvents() async throws {
         try await self.loadAndProcessNewEvents()
     }
 }
@@ -162,6 +195,8 @@ public extension KeystoneAnalyzer {
 // MARK: Date intervals
 
 public extension KeystoneAnalyzer {
+    // MARK: Monthly (normalized)
+    
     /// Get the date interval covering all time.
     static let allEncompassingDateInterval: DateInterval = {
         DateInterval(start: Date(timeIntervalSinceReferenceDate: 0), duration: 300 * 365 * 24 * 60 * 60)
@@ -194,6 +229,25 @@ public extension KeystoneAnalyzer {
     static func isNormalized(_ interval: DateInterval) -> Bool {
         interval == Self.interval(containing: interval.start)
     }
+    
+    // MARK: Weekly
+    
+    /// Get the current date interval.
+    static func weekInterval(before: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+        let previous = before.start.addingTimeInterval(-24*60*60)
+        return .init(start: previous.startOfWeek(weekStartsOn: firstWeekday), end: previous.endOfWeek(weekStartsOn: firstWeekday))
+    }
+    
+    /// Get the current date interval.
+    static func weekInterval(after: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+        let next = after.end.addingTimeInterval(24*60*60)
+        return .init(start: next.startOfWeek(weekStartsOn: firstWeekday), end: next.endOfWeek(weekStartsOn: firstWeekday))
+    }
+    
+    /// Get the current date interval.
+    static func weekInterval(containing date: Date, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+        .init(start: date.startOfWeek(weekStartsOn: firstWeekday), end: date.endOfWeek(weekStartsOn: firstWeekday))
+    }
 }
 
 // MARK: Event processing
@@ -223,6 +277,8 @@ extension KeystoneAnalyzer {
                 continue
             }
             
+            // Update normalized intervals
+            
             let interval = Self.interval(containing: event.date)
             let state = try await self.state(in: interval)
             
@@ -231,6 +287,15 @@ extension KeystoneAnalyzer {
                                                                isNewEvent: true)
             
             modifiedStates.insert(state)
+            
+            // Update non-normalized intervals
+            for (interval, state) in nonNormalStates {
+                guard interval.contains(event.date) else {
+                    continue
+                }
+                
+                try await state.processEvent(event, aggregatorColumns: self.aggregatorColumns, isNewEvent: true)
+            }
         }
         
         // Expand the interval of processed events
@@ -325,7 +390,7 @@ extension KeystoneAnalyzer {
         }
         
         // Use as many events from cache as possible
-        if var cachedEvents = await self.loadEventsFromCache(in: interval) {
+        if var cachedEvents = await self.loadEvents(in: interval) {
             config.log?(.debug, "loaded \(cachedEvents.count) events from cache")
             
             let cachedEventsInterval = DateInterval(start: cachedEvents.first!.date, end: cachedEvents.last!.date)
@@ -392,6 +457,37 @@ extension KeystoneAnalyzer {
         allEvents.sort { $0.date < $1.date }
         
         try await self.processHistoricalEvents(allEvents, forAggregatorIds: uninitializedAggregators)
+    }
+    
+    /// Create and initialize a non-normal aggregator state.
+    func createNonNormalAggregatorState(in interval: DateInterval) async throws -> IntervalAggregatorState {
+        let aggregators = Self.instantiateAggregators(eventCategories: eventCategories)
+        let state = IntervalAggregatorState(interval: interval, aggregators: aggregators)
+        
+        guard let events = await self.loadEvents(in: interval) else {
+            return state
+        }
+        
+        let now = Date.now
+        let previousStatus = self.status
+        
+        var processedEvents = 0
+        let totalEvents = events.count
+        
+        // Update state for each event
+        for event in events {
+            assert(event.date < now, "encountered an event from the future")
+            
+            await updateStatus(.processingEvents(progress: Double(processedEvents) / Double(totalEvents)))
+            processedEvents += 1
+            
+            try await state.processEvent(event, aggregatorColumns: self.aggregatorColumns, isNewEvent: true)
+        }
+        
+        self.nonNormalStates[interval] = state
+        
+        await updateStatus(previousStatus)
+        return state
     }
 }
 
@@ -515,7 +611,7 @@ extension KeystoneAnalyzer {
 
 extension KeystoneAnalyzer {
     private static func formatDate(_ date: Date) -> String {
-        let components = Calendar.gregorian.dateComponents([.day, .month, .year], from: date)
+        let components = Calendar.reference.dateComponents([.day, .month, .year], from: date)
         let format: (Int?, Int) -> String = { "\($0!)".leftPadding(toMinimumLength: $1, withPad: "0") }
         return "\(format(components.year, 4))\(format(components.month, 2))\(format(components.day, 2))"
     }
@@ -556,11 +652,15 @@ extension KeystoneAnalyzer {
     
     /// Load the given events in the given interval.
     public func loadEvents(in interval: DateInterval) async -> [KeystoneEvent]? {
-        await delegate.load([KeystoneEvent].self, withKey: Self.eventsKey(for: interval))
+        if Self.isNormalized(interval) {
+            return await delegate.load([KeystoneEvent].self, withKey: Self.eventsKey(for: interval))
+        }
+        
+        return await self.loadEventsFromCache(in: interval)
     }
     
     /// Load events in the given interval from cache.
-    func loadEventsFromCache(in interval: DateInterval) async -> [KeystoneEvent]? {
+    private func loadEventsFromCache(in interval: DateInterval) async -> [KeystoneEvent]? {
         let previousStatus = self.status
         
         await updateStatus(.fetchingEvents(count: 0))
