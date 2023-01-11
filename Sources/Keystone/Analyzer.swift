@@ -41,11 +41,14 @@ public enum AnalyzerStatus {
     /// The analyzer state.
     let state: KeystoneAnalyzerState
     
+    /// The data aggregators for all events.
+    let allEventAggregators: [String: () -> any EventAggregator]
+    
     /// The known event categories.
     public let eventCategories: [EventCategory]
     
     /// Map form aggregator IDs to the columns that contain the respective aggregator.
-    let aggregatorColumns: [String: [EventColumn]]
+    let aggregatorColumns: [String: [EventColumn?]]
     
     /// States with non-normal intervals that have been queried.
     var nonNormalStates: [DateInterval: IntervalAggregatorState]
@@ -61,15 +64,16 @@ public enum AnalyzerStatus {
     
     /// Initialize the analytics state.
     internal init(config: KeystoneConfig, delegate: KeystoneDelegate, backend: KeystoneBackend,
-                  eventCategories: [EventCategory]) async throws {
+                  eventCategories: [EventCategory], allEventAggregators: [String: () -> any EventAggregator]) async throws {
         self.status = .initializingState
         self.config = config
         self.delegate = delegate
         self.backend = backend
         self.eventCategories = eventCategories
+        self.allEventAggregators = allEventAggregators
         self.nonNormalStates = [:]
         
-        var aggregatorColumns: [String: [EventColumn]] = [:]
+        var aggregatorColumns: [String: [EventColumn?]] = [:]
         for category in eventCategories {
             for column in category.columns {
                 for (id, _) in column.aggregators {
@@ -78,11 +82,17 @@ public enum AnalyzerStatus {
             }
         }
         
+        for (id, _) in allEventAggregators {
+            aggregatorColumns.modify(key: id, defaultValue: []) { $0.append(nil) }
+        }
+        
         self.aggregatorColumns = aggregatorColumns
         
         let currentInterval = Self.currentEventInterval
-        let currentState = try await Self.state(in: currentInterval, delegate: delegate, eventCategories: eventCategories)
-        let accumulatedState = try await Self.state(in: Self.allEncompassingDateInterval, delegate: delegate, eventCategories: eventCategories)
+        let currentState = try await Self.state(in: currentInterval, delegate: delegate, eventCategories: eventCategories,
+                                                allEventAggregators: allEventAggregators)
+        let accumulatedState = try await Self.state(in: Self.allEncompassingDateInterval, delegate: delegate, eventCategories: eventCategories,
+                                                    allEventAggregators: allEventAggregators)
         
         self.state = .init(currentState: currentState,
                            accumulatedState: accumulatedState,
@@ -170,7 +180,7 @@ extension KeystoneAnalyzer {
         }
         
         let state = try await self.state(in: interval)
-        return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0.categoryName == category } ?? false }
+        return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0?.categoryName == category } ?? false }
     }
     
     /// Find all aggregators belonging to a column in the given non-normal interval.
@@ -183,7 +193,7 @@ extension KeystoneAnalyzer {
             state = try await self.createNonNormalAggregatorState(in: interval)
         }
         
-        return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0.categoryName == category } ?? false }
+        return state.aggregators.filter { self.aggregatorColumns[$0.key]?.contains { $0?.categoryName == category } ?? false }
     }
     
     /// Load new events.
@@ -461,7 +471,7 @@ extension KeystoneAnalyzer {
     
     /// Create and initialize a non-normal aggregator state.
     func createNonNormalAggregatorState(in interval: DateInterval) async throws -> IntervalAggregatorState {
-        let aggregators = Self.instantiateAggregators(eventCategories: eventCategories)
+        let aggregators = Self.instantiateAggregators(eventCategories: eventCategories, allEventsAggregators: allEventAggregators)
         let state = IntervalAggregatorState(interval: interval, aggregators: aggregators)
         
         guard let events = await self.loadEvents(in: interval) else {
@@ -493,7 +503,7 @@ extension KeystoneAnalyzer {
 
 fileprivate extension IntervalAggregatorState {
     /// Process an event.
-    func processEvent(_ event: KeystoneEvent, aggregatorColumns: [String: [EventColumn]], isNewEvent: Bool) async throws {
+    func processEvent(_ event: KeystoneEvent, aggregatorColumns: [String: [EventColumn?]], isNewEvent: Bool) async throws {
         // Update aggregators
         for (id, aggregator) in self.aggregators {
             guard let columns = aggregatorColumns[id] else {
@@ -501,8 +511,10 @@ fileprivate extension IntervalAggregatorState {
             }
             
             for column in columns {
-                guard event.category == column.categoryName else {
-                    continue
+                if let column {
+                    guard event.category == column.categoryName else {
+                        continue
+                    }
                 }
                 
                 _ = aggregator.addEvent(event, column: column)
@@ -551,17 +563,18 @@ extension KeystoneAnalyzer {
         
         state.historicalStates[state.currentState.interval] = state.currentState
         state.currentState = .init(interval: currentInterval,
-                                   aggregators: Self.instantiateAggregators(eventCategories: eventCategories))
+                                   aggregators: Self.instantiateAggregators(eventCategories: eventCategories,
+                                                                            allEventsAggregators: allEventAggregators))
         
         try await self.persistState(state.currentState)
     }
     
     /// Fetch or create the state within a given interval.
     static func state(in interval: DateInterval, delegate: KeystoneDelegate,
-                      eventCategories: [EventCategory]) async throws
+                      eventCategories: [EventCategory], allEventAggregators: [String: () -> any EventAggregator]) async throws
         -> IntervalAggregatorState
     {
-        let aggregators = Self.instantiateAggregators(eventCategories: eventCategories)
+        let aggregators = Self.instantiateAggregators(eventCategories: eventCategories, allEventsAggregators: allEventAggregators)
         if let state = await delegate.load(KeystoneAggregatorState.self, withKey: KeystoneAggregatorState.key(for: interval)) {
             return try IntervalAggregatorState(from: state, aggregators: aggregators)
         }
@@ -582,14 +595,16 @@ extension KeystoneAnalyzer {
             return self.state.currentState
         }
         
-        let state = try await Self.state(in: interval, delegate: delegate, eventCategories: eventCategories)
+        let state = try await Self.state(in: interval, delegate: delegate, eventCategories: eventCategories,
+                                         allEventAggregators: allEventAggregators)
+        
         self.state.historicalStates[interval] = state
         
         return state
     }
     
     /// Instantiate the aggregators for a state.
-    static func instantiateAggregators(eventCategories: [EventCategory]) -> [String: any EventAggregator] {
+    static func instantiateAggregators(eventCategories: [EventCategory], allEventsAggregators: [String: () -> any EventAggregator]) -> [String: any EventAggregator] {
         var aggregators = [String: any EventAggregator]()
         for category in eventCategories {
             for column in category.columns {
@@ -601,6 +616,14 @@ extension KeystoneAnalyzer {
                     aggregators[id] = instantiateAggregator()
                 }
             }
+        }
+        
+        for (id, instantiateAggregator) in allEventsAggregators {
+            guard aggregators[id] == nil else {
+                continue
+            }
+            
+            aggregators[id] = instantiateAggregator()
         }
         
         return aggregators
@@ -707,17 +730,22 @@ public struct KeystoneAnalyzerBuilder {
     /// The delegate object.
     let delegate: KeystoneDelegate
     
+    /// The data aggregators for all events.
+    let allEventAggregators: [String: () -> any EventAggregator]
+    
     /// The known event categories.
     var eventCategories: [EventCategory]
     
     /// Memberwise initializer.
     public init(config: KeystoneConfig,
                 backend: KeystoneBackend,
-                delegate: KeystoneDelegate) {
+                delegate: KeystoneDelegate,
+                allEventAggregators: [String: () -> any EventAggregator] = [:]) {
         self.config = config
         self.backend = backend
         self.delegate = delegate
         self.eventCategories = []
+        self.allEventAggregators = allEventAggregators
     }
 }
 
@@ -734,7 +762,8 @@ public extension KeystoneAnalyzerBuilder {
     /// Build the analyzer.
     func build() async throws -> KeystoneAnalyzer {
         try await KeystoneAnalyzer(config: config, delegate: delegate, backend: backend,
-                                    eventCategories: eventCategories)
+                                   eventCategories: eventCategories,
+                                   allEventAggregators: allEventAggregators)
     }
 }
 

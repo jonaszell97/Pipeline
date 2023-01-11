@@ -29,30 +29,43 @@ public struct EventCategoryBuilder {
     /// The name of this category.
     public let name: String
     
+    /// The data aggregators for this column.
+    internal var aggregators: [String: () -> any EventAggregator]
+    
     /// The columns for events of this category.
     private var columns: [EventColumn]
     
     /// Memberwise initializer.
     internal init(name: String) {
         self.name = name
+        self.aggregators = [:]
         self.columns = []
     }
 }
 
 public extension EventCategoryBuilder {
     /// Register an event column.
-    @discardableResult mutating func registerColumn(name columnName: String, aggregators: [String: () -> any EventAggregator])
-        -> EventCategoryBuilder
+    mutating func registerColumn(name columnName: String, aggregators: [String: () -> any EventAggregator] = [:])
     {
+        guard columnName != "id" else {
+            fatalError("column name id is reserved")
+        }
+        
         let column = EventColumn(name: columnName, categoryName: self.name, aggregators: aggregators)
         self.columns.append(column)
-        
-        return self
+    }
+    
+    /// Register an aggregator for the entire category.
+    mutating func registerAggregator(id: String, instantiateAggregator: @escaping () -> any EventAggregator) {
+        self.aggregators[id] = instantiateAggregator
     }
     
     /// Build the category.
     func build() -> EventCategory {
-        EventCategory(name: name, columns: columns)
+        var columns = columns
+        columns.append(.init(name: "id", categoryName: name, aggregators: aggregators))
+        
+        return EventCategory(name: name, columns: columns)
     }
 }
 

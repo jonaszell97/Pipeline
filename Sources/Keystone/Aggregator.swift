@@ -14,7 +14,7 @@ public enum EventProcessingResult {
 
 public protocol EventAggregator: AnyObject, CustomDebugStringConvertible {
     /// Add a new event to this aggregator.
-    @MainActor func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult
+    @MainActor func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult
     
     /// Encode this aggregator's state.
     func encode() throws -> Data?
@@ -74,7 +74,7 @@ extension ChainingAggregator: EventAggregator {
     /// The next aggregator in the chain.
     public var next: EventAggregator? { output }
     
-    public func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
         let result = self.input.addEvent(event, column: column)
         switch result {
         case .discard:
@@ -134,9 +134,12 @@ open class NumericStatsAggregator {
 }
 
 extension NumericStatsAggregator: EventAggregator {
-    public func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
+        guard let column else {
+            return .discard
+        }
         guard let value = event.data[column.name], case .number(let number) = value else {
-            return .keep
+            return .discard
         }
         
         let previousAverage = self.runningAverage
@@ -207,7 +210,7 @@ open class CountingAggregator {
 }
 
 extension CountingAggregator: EventAggregator {
-    public func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
         self.valueCount += 1
         return .keep
     }
@@ -245,7 +248,7 @@ open class LatestEventAggregator {
 }
 
 extension LatestEventAggregator: EventAggregator {
-    public func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
         self.latestEvents[event.analyticsId] = event
         return .keep
     }
@@ -280,7 +283,10 @@ public final class FilteringAggregator {
 }
 
 extension FilteringAggregator: EventAggregator {
-    public func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
+        guard let column else {
+            return .discard
+        }
         guard let datum = event.data[column.name] else {
             return .discard
         }
@@ -322,7 +328,7 @@ public final class MetaFilteringAggregator {
 }
 
 extension MetaFilteringAggregator: EventAggregator {
-    public func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
         guard self.filter(event) else {
             return .discard
         }
@@ -361,7 +367,10 @@ public final class MappingAggregator {
 }
 
 extension MappingAggregator: EventAggregator {
-    public func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
+        guard let column else {
+            return .discard
+        }
         guard let datum = event.data[column.name] else {
             return .discard
         }
@@ -411,7 +420,10 @@ open class GroupingAggregator: EventAggregator {
         groupedValues = [:]
     }
     
-    open func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    open func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
+        guard let column else {
+            return .discard
+        }
         guard let datum = event.data[column.name] else {
             return .keep
         }
@@ -451,7 +463,10 @@ open class CountingByGroupAggregator: EventAggregator {
         groupedValues = [:]
     }
     
-    open func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    open func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
+        guard let column else {
+            return .discard
+        }
         guard let datum = event.data[column.name] else {
             return .keep
         }
@@ -491,7 +506,7 @@ open class DateAggregator: EventAggregator {
         self.groupedValues = groupedValues
     }
     
-    open func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    open func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
         let key = Calendar.reference.dateComponents(components, from: event.date)
         self.groupedValues.modify(key: key, defaultValue: []) { $0.append(event) }
         
@@ -533,7 +548,7 @@ open class CountingByDateAggregator: EventAggregator {
         self.groupedValues = groupedValues
     }
     
-    open func addEvent(_ event: KeystoneEvent, column: EventColumn) -> EventProcessingResult {
+    open func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
         let key = Calendar.reference.dateComponents(components, from: event.date)
         self.groupedValues.modify(key: key, defaultValue: 0) { $0 += 1 }
         
