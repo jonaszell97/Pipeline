@@ -237,7 +237,7 @@ public extension KeystoneAnalyzer {
     
     /// Get the current date interval.
     static func isNormalized(_ interval: DateInterval) -> Bool {
-        interval == Self.interval(containing: interval.start)
+        interval == Self.interval(containing: interval.start) || interval == allEncompassingDateInterval
     }
     
     // MARK: Weekly
