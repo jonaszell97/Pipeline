@@ -214,7 +214,7 @@ public extension KeystoneAnalyzer {
     
     /// Get the current date interval.
     static var currentEventInterval: DateInterval {
-        let now = Date.now
+        let now = KeystoneAnalyzer.now
         return .init(start: now.startOfMonth, end: now.endOfMonth)
     }
     
@@ -269,7 +269,7 @@ extension KeystoneAnalyzer {
             return
         }
         
-        let now = Date.now
+        let now = KeystoneAnalyzer.now
         let previousStatus = self.status
         
         var processedEvents = 0
@@ -324,7 +324,7 @@ extension KeystoneAnalyzer {
     func processHistoricalEvents(_ events: [KeystoneEvent], forAggregatorIds ids: Set<String>) async throws {
         let aggregatorColumns = self.aggregatorColumns.filter { ids.contains($0.key) }
         
-        let now = Date.now
+        let now = KeystoneAnalyzer.now
         let previousStatus = self.status
         
         var processedEvents = 0
@@ -371,13 +371,13 @@ extension KeystoneAnalyzer {
     
     /// Load and process all events.
     func loadAndProcessAllHistory() async throws {
-        try await self.loadAndProcessEvents(in: .init(start: .distantPast, end: .now))
+        try await self.loadAndProcessEvents(in: .init(start: .distantPast, end: Self.now))
     }
     
     /// Load and process new events.
     func loadAndProcessNewEvents() async throws {
         let processedEventInterval = self.state.processedEventInterval
-        let newEventInterval = DateInterval(start: processedEventInterval.end, end: .now)
+        let newEventInterval = DateInterval(start: processedEventInterval.end, end: Self.now)
         
         try await self.loadAndProcessEvents(in: newEventInterval)
     }
@@ -478,7 +478,7 @@ extension KeystoneAnalyzer {
             return state
         }
         
-        let now = Date.now
+        let now = KeystoneAnalyzer.now
         let previousStatus = self.status
         
         var processedEvents = 0
@@ -630,6 +630,43 @@ extension KeystoneAnalyzer {
     }
 }
 
+#if DEBUG
+
+extension KeystoneAnalyzer {
+    static var firstNowDate: Date = .distantPast
+    static var previousNowDate: (returned: Date, real: Date)? = nil
+    static var fixedNowDate: Date? = nil
+    
+    static var now: Date {
+        guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil else {
+            return Date.now
+        }
+        
+        if let fixedNowDate {
+            return fixedNowDate
+        }
+        
+        let realNow = Date.now
+        guard let (_, real) = previousNowDate else {
+            previousNowDate = (returned: firstNowDate, real: realNow)
+            return firstNowDate
+        }
+        
+        let difference = realNow.timeIntervalSinceReferenceDate - real.timeIntervalSinceReferenceDate
+        let date = firstNowDate.addingTimeInterval(difference)
+        
+        return date
+    }
+}
+
+#else
+
+extension KeystoneAnalyzer {
+    static var now: Date { Date.now }
+}
+
+#endif
+
 // MARK: Events
 
 extension KeystoneAnalyzer {
@@ -731,7 +768,7 @@ public struct KeystoneAnalyzerBuilder {
     let delegate: KeystoneDelegate
     
     /// The data aggregators for all events.
-    let allEventAggregators: [String: () -> any EventAggregator]
+    var allEventAggregators: [String: () -> any EventAggregator]
     
     /// The known event categories.
     var eventCategories: [EventCategory]
@@ -739,24 +776,27 @@ public struct KeystoneAnalyzerBuilder {
     /// Memberwise initializer.
     public init(config: KeystoneConfig,
                 backend: KeystoneBackend,
-                delegate: KeystoneDelegate,
-                allEventAggregators: [String: () -> any EventAggregator] = [:]) {
+                delegate: KeystoneDelegate) {
         self.config = config
         self.backend = backend
         self.delegate = delegate
         self.eventCategories = []
-        self.allEventAggregators = allEventAggregators
+        self.allEventAggregators = [:]
     }
 }
 
 public extension KeystoneAnalyzerBuilder {
     /// Register an event category.
-    @discardableResult mutating func registerCategory(name: String, modify: (inout EventCategoryBuilder) -> Void) -> KeystoneAnalyzerBuilder {
+    mutating func registerCategory(name: String, modify: (inout EventCategoryBuilder) -> Void) {
         var builder = EventCategoryBuilder(name: name)
         modify(&builder)
         
         self.eventCategories.append(builder.build())
-        return self
+    }
+    
+    /// Register an aggregator for all events.
+    mutating func registerAllEventAggregator(id: String, instantiateAggregator: @escaping () -> any EventAggregator) {
+        self.allEventAggregators[id] = instantiateAggregator
     }
     
     /// Build the analyzer.
