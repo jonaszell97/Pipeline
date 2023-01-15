@@ -712,7 +712,7 @@ extension KeystoneAnalyzer {
     
     /// Load the given events in the given interval.
     public func loadEvents(in interval: DateInterval) async -> [KeystoneEvent]? {
-        if Self.isNormalized(interval) {
+        if Self.isNormalized(interval) && interval != Self.allEncompassingDateInterval {
             return await delegate.load([KeystoneEvent].self, withKey: Self.eventsKey(for: interval))
         }
         
@@ -725,6 +725,9 @@ extension KeystoneAnalyzer {
         
         await updateStatus(.fetchingEvents(count: 0))
         
+        let interval = DateInterval(start: max(interval.start, self.state.processedEventInterval.start),
+                                    end: min(interval.end, self.state.processedEventInterval.end))
+        
         var allEvents = [KeystoneEvent]()
         var currentInterval = Self.interval(containing: interval.end)
         
@@ -734,7 +737,7 @@ extension KeystoneAnalyzer {
             }
             
             guard let events = await self.loadEvents(in: currentInterval) else {
-                break
+                continue
             }
             guard !events.isEmpty else {
                 continue
