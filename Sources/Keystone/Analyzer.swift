@@ -587,12 +587,16 @@ extension KeystoneAnalyzer {
     
     /// Fetch or create the state within a given interval.
     func state(in interval: DateInterval) async throws -> IntervalAggregatorState {
-        if let cachedState = self.state.historicalStates[interval] {
-            return cachedState
-        }
-        
         if interval == Self.currentEventInterval {
             return self.state.currentState
+        }
+        
+        if interval == Self.allEncompassingDateInterval {
+            return self.state.accumulatedState
+        }
+        
+        if let cachedState = self.state.historicalStates[interval] {
+            return cachedState
         }
         
         let state = try await Self.state(in: interval, delegate: delegate, eventCategories: eventCategories,
