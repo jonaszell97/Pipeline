@@ -51,13 +51,13 @@ public final class CloudKitBackend: KeystoneBackend {
     public let accountStatus: CKAccountStatus
     
     /// The unique iCloud record ID for the user.
-    let iCloudRecordID: String?
+    let iCloudRecordID: String
     
     /// Default initializer.
     public init(config: KeystoneConfig,
                 containerIdentifier: String,
                 tableName: String,
-                userIdColumnName: String = "userId") async {
+                userIdColumnName: String = "userId") async throws {
         self.config = config
         self.containerIdentifier = containerIdentifier
         self.tableName = tableName
@@ -66,17 +66,23 @@ public final class CloudKitBackend: KeystoneBackend {
         let container = CKContainer(identifier: containerIdentifier)
         self.container = container
         
-        self.iCloudRecordID = await withCheckedContinuation { continuation in
+        let iCloudRecordID: String = try await withCheckedThrowingContinuation { continuation in
             container.fetchUserRecordID(completionHandler: { (recordID, error) in
                 if let error {
-                    config.log?(.fault, "error fetching user record id: \(error.localizedDescription)")
+                    continuation.resume(throwing: error)
+                    return
                 }
                 
-                continuation.resume(returning: recordID?.recordName)
+                guard let id = recordID?.recordName else {
+                    continuation.resume(throwing: CKError(.notAuthenticated))
+                    return
+                }
+                
+                continuation.resume(returning: id)
             })
         }
         
-        self.accountStatus = await withCheckedContinuation { continuation in
+        let accountStatus = await withCheckedContinuation { continuation in
             container.accountStatus { status, error in
                 if let error {
                     config.log?(.error, "error fetching account status: \(error.localizedDescription)")
@@ -85,6 +91,24 @@ public final class CloudKitBackend: KeystoneBackend {
                 continuation.resume(returning: status)
             }
         }
+        
+        switch accountStatus {
+        case .available:
+            fallthrough
+        case .temporarilyUnavailable:
+            break
+        case .couldNotDetermine:
+            fallthrough
+        case .noAccount:
+            fallthrough
+        case .restricted:
+            fallthrough
+        @unknown default:
+            throw CKError(.notAuthenticated)
+        }
+        
+        self.iCloudRecordID = iCloudRecordID
+        self.accountStatus = accountStatus
     }
 }
 
