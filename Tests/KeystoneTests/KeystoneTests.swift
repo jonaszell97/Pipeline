@@ -25,7 +25,7 @@ import XCTest
         ]
         
         builder.registerAllEventAggregator(id: "All Event Count") { CountingAggregator() }
-        builder.registerAllEventAggregator(id: "All Event Count By Month") { CountingByDateAggregator(components: [.month]) }
+        builder.registerAllEventAggregator(id: "All Event Count By Month") { CountingByDateAggregator(scope: .month) }
         
         builder.registerCategory(name: "numericEvent") { category in
             category.registerAggregator(id: "numericEvent Count") { CountingAggregator() }
@@ -36,7 +36,7 @@ import XCTest
         builder.registerCategory(name: "textEvent") { category in
             category.registerAggregator(id: "textEvent Count") { CountingAggregator() }
             category.registerColumn(name: "textValueA", aggregators: ["textValueA Count By Group": { CountingByGroupAggregator() }])
-            category.registerColumn(name: "textValueB", aggregators: ["textValueB Count By Date": { CountingByDateAggregator(components: [.day]) }])
+            category.registerColumn(name: "textValueB", aggregators: ["textValueB Count By Date": { CountingByDateAggregator(scope: .day) }])
         }
         
         let builder = MockEventBuilder(userCount: userCount, eventCategories: eventCategories, using: &rng)
@@ -69,7 +69,7 @@ import XCTest
         var numericEvent_Cnt = 0
         
         var textValueA_Cnts = [KeystoneEventData: Int]()
-        var textValueB_Cnts = [DateComponents: Int]()
+        var textValueB_Cnts = [Date: Int]()
         var textEvent_Cnt = 0
         
         for event in events {
@@ -92,7 +92,7 @@ import XCTest
                 }
                 if let valueB = event.data["textValueB"]?.stringValue {
                     _ = valueB
-                    let key = Calendar.reference.dateComponents([.day], from: event.date)
+                    let key = DateAggregatorScope.day.scopeStartDate(from: event.date)
                     textValueB_Cnts.modify(key: key, defaultValue: 0) { $0 += 1 }
                 }
                 
@@ -163,7 +163,7 @@ import XCTest
         var numericEvent_Cnt = 0
         
         var textValueA_Cnts = [KeystoneEventData: Int]()
-        var textValueB_Cnts = [DateComponents: Int]()
+        var textValueB_Cnts = [Date: Int]()
         var textEvent_Cnt = 0
         
         for event in events {
@@ -186,7 +186,7 @@ import XCTest
                 }
                 if let valueB = event.data["textValueB"]?.stringValue {
                     _ = valueB
-                    let key = Calendar.reference.dateComponents([.day], from: event.date)
+                    let key = DateAggregatorScope.day.scopeStartDate(from: event.date)
                     textValueB_Cnts.modify(key: key, defaultValue: 0) { $0 += 1 }
                 }
                 
@@ -311,7 +311,7 @@ import XCTest
         var numericEvent_Cnt = 0
         
         var textValueA_Cnts = [KeystoneEventData: Int]()
-        var textValueB_Cnts = [DateComponents: Int]()
+        var textValueB_Cnts = [Date: Int]()
         var textEvent_Cnt = 0
         
         for batch in batches {
@@ -337,7 +337,7 @@ import XCTest
                     }
                     if let valueB = event.data["textValueB"]?.stringValue {
                         _ = valueB
-                        let key = Calendar.reference.dateComponents([.day], from: event.date)
+                        let key = DateAggregatorScope.day.scopeStartDate(from: event.date)
                         textValueB_Cnts.modify(key: key, defaultValue: 0) { $0 += 1 }
                     }
                     

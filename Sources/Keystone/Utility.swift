@@ -77,6 +77,15 @@ extension Date {
     func endOfWeek(weekStartsOn firstWeekday: FirstDayOfWeek) -> Date {
         startOfWeek(weekStartsOn: firstWeekday).addingTimeInterval(7*24*60*60 - 1)
     }
+    
+    /// - returns: A date representing the start of the year this date is in.
+    var startOfYear: Date {
+        var components = Calendar.reference.dateComponents([.year], from: self)
+        components.day = 1
+        components.month = 1
+        
+        return Calendar.reference.date(from: components)!
+    }
 }
 
 internal extension DateInterval {
