@@ -79,7 +79,7 @@ extension IntervalAggregatorState {
         KeystoneAggregatorState(interval: interval,
                                 processedEventInterval: self.processedEventInterval,
                                 eventCount: self.eventCount,
-                                knownAggregators: knownAggregators,
+                                knownAggregators: Set(aggregators.keys),
                                 aggregators: try aggregators.map { .init(id: $0.key, data: try $0.value.final.encode()) })
     }
     
