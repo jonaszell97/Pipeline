@@ -400,7 +400,7 @@ extension KeystoneAnalyzer {
         }
         
         // Use as many events from cache as possible
-        if var cachedEvents = await self.loadEvents(in: interval) {
+        if var cachedEvents = await self.getProcessedEvents(in: interval) {
             config.log?(.debug, "loaded \(cachedEvents.count) events from cache")
             
             let cachedEventsInterval = DateInterval(start: cachedEvents.first!.date, end: cachedEvents.last!.date)
@@ -454,7 +454,7 @@ extension KeystoneAnalyzer {
         intervals.append(state.currentState.interval)
         
         // Register the events we saved from before the reset
-        guard let allEvents = await self.loadEventsFromCache(in: Self.allEncompassingDateInterval) else {
+        guard let allEvents = await self.getProcessedEvents(in: Self.allEncompassingDateInterval) else {
             config.log?(.debug, "updating new aggregators: no events found")
             return
         }
@@ -468,7 +468,7 @@ extension KeystoneAnalyzer {
         let aggregators = Self.instantiateAggregators(eventCategories: eventCategories, allEventsAggregators: allEventAggregators)
         let state = IntervalAggregatorState(interval: interval, aggregators: aggregators)
         
-        guard let events = await self.loadEvents(in: interval) else {
+        guard let events = await self.getProcessedEvents(in: interval) else {
             return state
         }
         
@@ -688,7 +688,7 @@ extension KeystoneAnalyzer {
         let totalEventCount = events.count
         
         var currentInterval: DateInterval = Self.interval(containing: events[0].date)
-        var currentIntervalEvents = await self.loadEvents(in: currentInterval) ?? []
+        var currentIntervalEvents = await self.getProcessedEvents(in: currentInterval) ?? []
         
         var currentIntervalEventCount = currentIntervalEvents.count
         var currentIntervalEventIds = Set(currentIntervalEvents.map { $0.id })
@@ -705,7 +705,7 @@ extension KeystoneAnalyzer {
                 }
                 
                 currentInterval = eventInterval
-                currentIntervalEvents = await self.loadEvents(in: currentInterval) ?? []
+                currentIntervalEvents = await self.getProcessedEvents(in: currentInterval) ?? []
                 currentIntervalEventCount = currentIntervalEvents.count
                 currentIntervalEventIds = Set(currentIntervalEvents.map { $0.id })
             }
@@ -720,19 +720,13 @@ extension KeystoneAnalyzer {
         await delegate.persist(currentIntervalEvents, withKey: Self.eventsKey(for: currentInterval))
     }
     
-    /// Load the given events in the given interval.
-    public func loadEvents(in interval: DateInterval) async -> [KeystoneEvent]? {
+    /// Get the events in the given interval from cache.
+    public func getProcessedEvents(in interval: DateInterval) async -> [KeystoneEvent]? {
         if Self.isNormalized(interval) && interval != Self.allEncompassingDateInterval {
             return await delegate.load([KeystoneEvent].self, withKey: Self.eventsKey(for: interval))
         }
-        
-        return await self.loadEventsFromCache(in: interval)
-    }
-    
-    /// Load events in the given interval from cache.
-    private func loadEventsFromCache(in interval: DateInterval) async -> [KeystoneEvent]? {
+
         let previousStatus = self.status
-        
         await updateStatus(.fetchingEvents(count: 0, source: "cache"))
         
         let interval = DateInterval(start: max(interval.start, self.state.processedEventInterval.start),
@@ -740,27 +734,25 @@ extension KeystoneAnalyzer {
         
         var allEvents = [KeystoneEvent]()
         var currentInterval = Self.interval(containing: interval.end)
+        var foundAnyEvents = false
         
         while currentInterval.end > interval.start {
-            defer {
-                currentInterval = Self.interval(before: currentInterval)
-            }
+            defer { currentInterval = Self.interval(before: currentInterval) }
             
-            guard let events = await self.loadEvents(in: currentInterval) else {
-                continue
-            }
-            guard !events.isEmpty else {
+            guard let events = await delegate.load([KeystoneEvent].self, withKey: Self.eventsKey(for: currentInterval)) else {
                 continue
             }
             
+            foundAnyEvents = true
             allEvents.append(contentsOf: events)
+            
             await updateStatus(.fetchingEvents(count: allEvents.count, source: "cache"))
         }
         
         allEvents = allEvents.filter { interval.contains($0.date) }.sorted { $0.date < $1.date }
         await updateStatus(previousStatus)
         
-        guard !allEvents.isEmpty else {
+        guard foundAnyEvents else {
             return nil
         }
         

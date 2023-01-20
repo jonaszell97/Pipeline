@@ -141,9 +141,13 @@ extension CloudKitBackend {
             throw CKError(.accountTemporarilyUnavailable)
         }
         
+        config.log?(.debug, "[CloudKitBackend] fetching events in interval \(interval)")
+        
         let records = try await self.loadNewRecords(in: interval) { loadedRecords in
             updateStatus(.fetchedRecords(count: loadedRecords))
         }
+        
+        print("duplicates: \(records.count - Set(records.map { $0.recordID.recordName }).count)")
         
         return try await self.createEvents(from: records) { progress in
             updateStatus(.processingRecords(progress: progress))
@@ -156,6 +160,8 @@ extension CloudKitBackend {
             config.log?(.debug, "early exit in loadAllEvents(updateStatus:) because account status is \(self.accountStatus)")
             throw CKError(.accountTemporarilyUnavailable)
         }
+        
+        config.log?(.debug, "[CloudKitBackend] fetching all events")
         
         let records = try await self.loadNewRecords() { loadedRecords in
             updateStatus(.fetchedRecords(count: loadedRecords))

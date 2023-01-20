@@ -407,34 +407,34 @@ import XCTest
         let analyzer = try! await builder.build()
         
         // Normal interval
-        let currentEventCount = await analyzer.loadEvents(in: KeystoneAnalyzer.currentEventInterval)?.count
+        let currentEventCount = await analyzer.getProcessedEvents(in: KeystoneAnalyzer.currentEventInterval)?.count
         XCTAssertEqual(500, currentEventCount)
         
-        let previousEventCount = await analyzer.loadEvents(in: KeystoneAnalyzer.interval(before: KeystoneAnalyzer.currentEventInterval))?.count
+        let previousEventCount = await analyzer.getProcessedEvents(in: KeystoneAnalyzer.interval(before: KeystoneAnalyzer.currentEventInterval))?.count
         XCTAssertEqual(500, previousEventCount)
         
-        let previous2EventCount = await analyzer.loadEvents(in: KeystoneAnalyzer.interval(before:
-                                                                                            KeystoneAnalyzer.interval(before: KeystoneAnalyzer.currentEventInterval)))?.count
+        let previous2EventCount = await analyzer.getProcessedEvents(in:
+            KeystoneAnalyzer.interval(before: KeystoneAnalyzer.interval(before: KeystoneAnalyzer.currentEventInterval)))?.count
         XCTAssertNil(previous2EventCount)
         
         // Weekly interval
         let currentWeek = KeystoneAnalyzer.weekInterval(containing: KeystoneAnalyzer.now, weekStartsOn: .monday)
-        let currentWeekEventCount = await analyzer.loadEvents(in: currentWeek)!.count
+        let currentWeekEventCount = await analyzer.getProcessedEvents(in: currentWeek)!.count
         XCTAssertLessThan(abs((2.0 / 14.0) * 1_000 - Double(currentWeekEventCount)), 1)
         
         let lastWeek = KeystoneAnalyzer.weekInterval(before: currentWeek, weekStartsOn: .monday)
-        let lastWeekEventCount = await analyzer.loadEvents(in: lastWeek)!.count
+        let lastWeekEventCount = await analyzer.getProcessedEvents(in: lastWeek)!.count
         XCTAssertLessThan(abs((7.0 / 14.0) * 1_000 - Double(lastWeekEventCount)), 1)
         
         let twoWeeksAgo = KeystoneAnalyzer.weekInterval(before: lastWeek, weekStartsOn: .monday)
-        let twoWeeksAgoEventCount = await analyzer.loadEvents(in: twoWeeksAgo)!.count
+        let twoWeeksAgoEventCount = await analyzer.getProcessedEvents(in: twoWeeksAgo)!.count
         XCTAssertLessThan(abs((5.0 / 14.0) * 1_000 - Double(twoWeeksAgoEventCount)), 1)
         
         // Daily interval
         for i in 0..<14 {
             let day = eventInterval.start.addingTimeInterval(TimeInterval(i)*24*60*60)
             let interval = DateInterval(start: day.startOfDay, end: day.endOfDay)
-            let eventCount = await analyzer.loadEvents(in: interval)!.count
+            let eventCount = await analyzer.getProcessedEvents(in: interval)!.count
             XCTAssertLessThan(abs((1.0 / 14.0) * 1_000 - Double(eventCount)), 1)
         }
     }
