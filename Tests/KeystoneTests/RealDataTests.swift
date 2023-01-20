@@ -3,34 +3,6 @@ import Foundation
 @testable import Keystone
 import XCTest
 
-fileprivate final class DuplicateEventChecker: EventAggregator {
-    var encounteredEvents: Set<UUID> = []
-    init() { }
-    
-    func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
-        guard !encounteredEvents.insert(event.id).inserted else {
-            return .keep
-        }
-        
-        XCTAssert(false, "duplicate event: \(event.id)")
-        return .keep
-    }
-    
-    func encode() throws -> Data? {
-        try JSONEncoder().encode(encounteredEvents)
-    }
-    
-    func decode(from data: Data) throws {
-        self.encounteredEvents = try JSONDecoder().decode(Set<UUID>.self, from: data)
-    }
-    
-    func reset() {
-        encounteredEvents.removeAll()
-    }
-    
-    var debugDescription: String { "DuplicateEventChecker" }
-}
-
 @MainActor final class RealDataTests: XCTestCase {
     /// The test analyzer.
     var builder: KeystoneAnalyzerBuilder? = nil

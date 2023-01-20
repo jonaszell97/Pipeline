@@ -622,6 +622,52 @@ open class CountingByDateAggregator: EventAggregator {
     public var valueCount: Int { self.groupedValues.values.reduce(0) { $0 + $1 } }
 }
 
+// MARK: DuplicateEventChecker
+
+public final class DuplicateEventChecker {
+    /// The IDs of all events that were encountered so far by this aggregator.
+    var encounteredEvents: Set<UUID> = []
+    
+    /// The number of duplicates that were found.
+    var encounteredDuplicates: Int = 0
+    
+    /// Default initializer.
+    public init() { }
+}
+
+extension DuplicateEventChecker: EventAggregator {
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
+        guard !encounteredEvents.insert(event.id).inserted else {
+            return .keep
+        }
+        
+        encounteredDuplicates += 1
+        return .keep
+    }
+    
+    private struct CodableState: Codable {
+        let encounteredEvents: Set<UUID>
+        let encounteredDuplicates: Int
+    }
+    
+    public func encode() throws -> Data? {
+        try JSONEncoder().encode(CodableState(encounteredEvents: encounteredEvents, encounteredDuplicates: encounteredDuplicates))
+    }
+    
+    public func decode(from data: Data) throws {
+        let state = try JSONDecoder().decode(CodableState.self, from: data)
+        self.encounteredEvents = state.encounteredEvents
+        self.encounteredDuplicates = state.encounteredDuplicates
+    }
+    
+    public func reset() {
+        encounteredEvents.removeAll()
+        encounteredDuplicates = 0
+    }
+    
+    public var debugDescription: String { "DuplicateEventChecker(\(encounteredDuplicates) duplicates)" }
+}
+
 // MARK: Compound aggregators
 
 public func PredicateAggregator(predicate: @escaping (KeystoneEventData) -> Bool) -> some EventAggregator {
