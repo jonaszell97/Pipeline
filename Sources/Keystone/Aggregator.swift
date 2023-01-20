@@ -411,6 +411,9 @@ open class GroupingAggregator: EventAggregator {
     /// The grouped values.
     public var groupedValues: [KeystoneEventData: [KeystoneEvent]]
     
+    /// The total event count.
+    public var totalEventCount: Int { groupedValues.values.reduce(0) { $0 + $1.count } }
+    
     /// Default initializer.
     public init(groupedValues: [KeystoneEventData: [KeystoneEvent]] = [:]) {
         self.groupedValues = groupedValues
@@ -453,6 +456,9 @@ open class GroupingAggregator: EventAggregator {
 open class CountingByGroupAggregator: EventAggregator {
     /// The grouped values.
     public var groupedValues: [KeystoneEventData: Int]
+    
+    /// The total event count.
+    public var totalEventCount: Int { groupedValues.values.reduce(0) { $0 + $1 } }
     
     /// Default initializer.
     public init(groupedValues: [KeystoneEventData: Int] = [:]) {
@@ -535,6 +541,9 @@ open class DateAggregator: EventAggregator {
     /// The grouped values.
     public var groupedValues: [Date: [KeystoneEvent]]
     
+    /// The total event count.
+    public var totalEventCount: Int { groupedValues.values.reduce(0) { $0 + $1.count } }
+    
     /// Default initializer.
     public init(scope: DateAggregatorScope, groupedValues: [Date: [KeystoneEvent]] = [:]) {
         self.scope = scope
@@ -576,6 +585,9 @@ open class CountingByDateAggregator: EventAggregator {
     
     /// The grouped values.
     public var groupedValues: [Date: Int]
+    
+    /// The total event count.
+    public var totalEventCount: Int { groupedValues.values.reduce(0) { $0 + $1 } }
     
     /// Default initializer.
     public init(scope: DateAggregatorScope, groupedValues: [Date: Int] = [:]) {

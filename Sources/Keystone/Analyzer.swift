@@ -102,15 +102,15 @@ public enum AnalyzerStatus {
         // Check if the current state needs to be updated
         try await self.ensureCurrentStateValidity()
         
-        // Check for new aggregators and reset if there are any
-        try await self.checkForNewAggregators()
-        
         // Initialize with complete history
         if accumulatedState.processedEventInterval.duration.isZero {
             try await self.loadAndProcessAllHistory()
         }
-        // Update with the latest events
         else {
+            // Check for new aggregators and reset if there are any
+            try await self.checkForNewAggregators()
+            
+            // Update with the latest events
             try await self.loadAndProcessNewEvents()
         }
         
@@ -454,18 +454,12 @@ extension KeystoneAnalyzer {
         intervals.append(state.currentState.interval)
         
         // Register the events we saved from before the reset
-        var allEvents = [KeystoneEvent]()
-        for interval in intervals {
-            async let events = await self.loadEvents(in: interval)
-            guard let events = await events else {
-                continue
-            }
-            
-            allEvents.append(contentsOf: events)
+        guard let allEvents = await self.loadEventsFromCache(in: Self.allEncompassingDateInterval) else {
+            config.log?(.debug, "updating new aggregators: no events found")
+            return
         }
         
-        allEvents.sort { $0.date < $1.date }
-        
+        config.log?(.debug, "updating new aggregators: \(allEvents.count) events found")
         try await self.processHistoricalEvents(allEvents, forAggregatorIds: uninitializedAggregators)
     }
     
@@ -695,6 +689,8 @@ extension KeystoneAnalyzer {
         
         var currentInterval: DateInterval = Self.interval(containing: events[0].date)
         var currentIntervalEvents = await self.loadEvents(in: currentInterval) ?? []
+        
+        var currentIntervalEventCount = currentIntervalEvents.count
         var currentIntervalEventIds = Set(currentIntervalEvents.map { $0.id })
         
         for event in events {
@@ -703,10 +699,14 @@ extension KeystoneAnalyzer {
             
             let eventInterval = Self.interval(containing: event.date)
             if eventInterval != currentInterval {
-                await delegate.persist(currentIntervalEvents, withKey: Self.eventsKey(for: currentInterval))
+                // Only persist if there were changes
+                if currentIntervalEventCount != currentIntervalEvents.count {
+                    await delegate.persist(currentIntervalEvents, withKey: Self.eventsKey(for: currentInterval))
+                }
                 
                 currentInterval = eventInterval
                 currentIntervalEvents = await self.loadEvents(in: currentInterval) ?? []
+                currentIntervalEventCount = currentIntervalEvents.count
                 currentIntervalEventIds = Set(currentIntervalEvents.map { $0.id })
             }
             
