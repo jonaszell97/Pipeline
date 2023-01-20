@@ -147,8 +147,6 @@ extension CloudKitBackend {
             updateStatus(.fetchedRecords(count: loadedRecords))
         }
         
-        print("duplicates: \(records.count - Set(records.map { $0.recordID.recordName }).count)")
-        
         return try await self.createEvents(from: records) { progress in
             updateStatus(.processingRecords(progress: progress))
         }
@@ -267,9 +265,10 @@ extension CloudKitBackend {
         
         var queryCompletion: Optional<(Result<CKQueryOperation.Cursor?, Error>) -> Void> = nil
         queryCompletion = { result in
-            let data = data.map { $0 }
-            let queryCompletion = queryCompletion
+            let localData = data
+            data.removeAll()
             
+            let queryCompletion = queryCompletion
             Task { @MainActor in
                 if case .failure(let error) = result {
                     _ = receiveResults(nil, error, false)
@@ -281,7 +280,7 @@ extension CloudKitBackend {
                     return
                 }
                 
-                let shouldContinue = receiveResults(data, nil, true)
+                let shouldContinue = receiveResults(localData, nil, true)
                 guard shouldContinue else {
                     return
                 }
