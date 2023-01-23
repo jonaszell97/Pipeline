@@ -30,7 +30,7 @@ import XCTest
             return
         }
         
-        KeystoneAnalyzer.fixedNowDate = backend.events.last!.date.addingTimeInterval(24*60*60)
+        KeystoneAnalyzer.setNowDate(backend.events.last!.date.addingTimeInterval(24*60*60))
         
         builder.registerAllEventAggregator(id: "allEventCounter") { CountingAggregator() }
         builder.registerAllEventAggregator(id: "allEventCounterByDay") { CountingByDateAggregator(scope: .day) }
@@ -128,7 +128,7 @@ import XCTest
         let totalEventSpan = backend.events.last!.date.timeIntervalSinceReferenceDate - backend.events.first!.date.timeIntervalSinceReferenceDate
         let halfDate = backend.events.first!.date.addingTimeInterval(totalEventSpan * 0.5)
         
-        KeystoneAnalyzer.fixedNowDate = halfDate
+        KeystoneAnalyzer.setNowDate(halfDate)
         
         builder.registerCategory(name: "onboardingCompleted") { category in
             category.registerAggregator(id: "completedOnboardings") { CountingByDateAggregator(scope: .day) }
@@ -142,7 +142,7 @@ import XCTest
         XCTAssert(completedOnboardings is CountingByDateAggregator)
         XCTAssertEqual((completedOnboardings as! CountingByDateAggregator).totalEventCount, backend.events.filter { $0.date <= halfDate && $0.category == "onboardingCompleted" }.count)
         
-        KeystoneAnalyzer.fixedNowDate = backend.events.last!.date.addingTimeInterval(24*60*60)
+        KeystoneAnalyzer.setNowDate(backend.events.last!.date.addingTimeInterval(24*60*60))
         
         let analyzer2 = try await builder.build()
         

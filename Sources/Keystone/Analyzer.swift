@@ -224,58 +224,96 @@ extension KeystoneAnalyzer {
 // MARK: Date intervals
 
 public extension KeystoneAnalyzer {
+    // MARK: Yearly
+    
+    /// Get the current year interval.
+    nonisolated static func yearInterval(before: DateInterval) -> DateInterval {
+        let previous = before.start.addingTimeInterval(-24*60*60)
+        return .init(start: previous.startOfYear, end: previous.endOfYear)
+    }
+    
+    /// Get the current year interval.
+    nonisolated static func yearInterval(after: DateInterval) -> DateInterval {
+        let next = after.end.addingTimeInterval(24*60*60)
+        return .init(start: next.startOfYear, end: next.endOfYear)
+    }
+    
+    /// Get the current year interval.
+    nonisolated static func yearInterval(containing date: Date) -> DateInterval {
+        .init(start: date.startOfYear, end: date.endOfYear)
+    }
+    
     // MARK: Monthly (normalized)
     
     /// Get the date interval covering all time.
-    static let allEncompassingDateInterval: DateInterval = {
+    nonisolated static let allEncompassingDateInterval: DateInterval = {
         DateInterval(start: Date(timeIntervalSinceReferenceDate: 0), duration: 300 * 365 * 24 * 60 * 60)
     }()
     
     /// Get the current date interval.
-    static var currentEventInterval: DateInterval {
+    nonisolated static var currentEventInterval: DateInterval {
         let now = KeystoneAnalyzer.now
         return .init(start: now.startOfMonth, end: now.endOfMonth)
     }
     
     /// Get the current date interval.
-    static func interval(before: DateInterval) -> DateInterval {
+    nonisolated static func interval(before: DateInterval) -> DateInterval {
         let previous = before.start.addingTimeInterval(-24*60*60)
         return .init(start: previous.startOfMonth, end: previous.endOfMonth)
     }
     
     /// Get the current date interval.
-    static func interval(after: DateInterval) -> DateInterval {
+    nonisolated static func interval(after: DateInterval) -> DateInterval {
         let next = after.end.addingTimeInterval(24*60*60)
         return .init(start: next.startOfMonth, end: next.endOfMonth)
     }
     
     /// Get the current date interval.
-    static func interval(containing date: Date) -> DateInterval {
+    nonisolated static func interval(containing date: Date) -> DateInterval {
         .init(start: date.startOfMonth, end: date.endOfMonth)
     }
     
     /// Get the current date interval.
-    static func isNormalized(_ interval: DateInterval) -> Bool {
+    nonisolated static func isNormalized(_ interval: DateInterval) -> Bool {
         interval == Self.interval(containing: interval.start) || interval == allEncompassingDateInterval
     }
     
     // MARK: Weekly
     
     /// Get the current date interval.
-    static func weekInterval(before: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+    nonisolated static func weekInterval(before: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
         let previous = before.start.addingTimeInterval(-24*60*60)
         return .init(start: previous.startOfWeek(weekStartsOn: firstWeekday), end: previous.endOfWeek(weekStartsOn: firstWeekday))
     }
     
     /// Get the current date interval.
-    static func weekInterval(after: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+    nonisolated static func weekInterval(after: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
         let next = after.end.addingTimeInterval(24*60*60)
         return .init(start: next.startOfWeek(weekStartsOn: firstWeekday), end: next.endOfWeek(weekStartsOn: firstWeekday))
     }
     
     /// Get the current date interval.
-    static func weekInterval(containing date: Date, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+    nonisolated static func weekInterval(containing date: Date, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
         .init(start: date.startOfWeek(weekStartsOn: firstWeekday), end: date.endOfWeek(weekStartsOn: firstWeekday))
+    }
+    
+    // MARK: Daily
+    
+    /// Get the current day interval.
+    nonisolated static func dayInterval(before: DateInterval) -> DateInterval {
+        let previous = before.start.addingTimeInterval(-24*60*60)
+        return .init(start: previous.startOfDay, end: previous.endOfDay)
+    }
+    
+    /// Get the current day interval.
+    nonisolated static func dayInterval(after: DateInterval) -> DateInterval {
+        let next = after.end.addingTimeInterval(24*60*60)
+        return .init(start: next.startOfDay, end: next.endOfDay)
+    }
+    
+    /// Get the current day interval.
+    nonisolated static func dayInterval(containing date: Date) -> DateInterval {
+        .init(start: date.startOfDay, end: date.endOfDay)
     }
 }
 
@@ -669,12 +707,16 @@ extension KeystoneAnalyzer {
 
 #if DEBUG
 
+fileprivate var firstNowDate: Date = .distantPast
+fileprivate var previousNowDate: (returned: Date, real: Date)? = nil
+fileprivate var fixedNowDate: Date? = nil
+
 extension KeystoneAnalyzer {
-    static var firstNowDate: Date = .distantPast
-    static var previousNowDate: (returned: Date, real: Date)? = nil
-    static var fixedNowDate: Date? = nil
+    nonisolated static func setNowDate(_ date: Date) {
+        fixedNowDate = date
+    }
     
-    static var now: Date {
+    nonisolated static var now: Date {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil else {
             return Date.now
         }

@@ -44,7 +44,7 @@ import XCTest
     }
     
     func testBasicAggregators() async {
-        KeystoneAnalyzer.fixedNowDate = Self.date(from: "2023-01-15T00:00:00+0000")
+        KeystoneAnalyzer.setNowDate(Self.date(from: "2023-01-15T00:00:00+0000"))
         
         let config = KeystoneConfig(userIdentifier: "ABC")
         let backend = MockBackend()
@@ -138,7 +138,7 @@ import XCTest
     }
     
     func testBasicAggregatorsWithReload() async {
-        KeystoneAnalyzer.fixedNowDate = Self.date(from: "2023-01-15T00:00:00+0000")
+        KeystoneAnalyzer.setNowDate(Self.date(from: "2023-01-15T00:00:00+0000"))
         
         let config = KeystoneConfig(userIdentifier: "ABC")
         let backend = MockBackend()
@@ -237,7 +237,7 @@ import XCTest
     }
     
     func testNewAggregators() async {
-        KeystoneAnalyzer.fixedNowDate = Self.date(from: "2023-01-15T00:00:00+0000")
+        KeystoneAnalyzer.setNowDate(Self.date(from: "2023-01-15T00:00:00+0000"))
         
         let config = KeystoneConfig(userIdentifier: "ABC")
         let backend = MockBackend()
@@ -299,7 +299,7 @@ import XCTest
         backend.mockEvents = events
         
         let batches = [events.prefix { $0.date <= splitDate }, events.filter { $0.date > splitDate }]
-        KeystoneAnalyzer.fixedNowDate = splitDate
+        KeystoneAnalyzer.setNowDate(splitDate)
         
         var analyzer = try! await builder.build()
         
@@ -380,13 +380,13 @@ import XCTest
             }
             
             // Reload the analyzer
-            KeystoneAnalyzer.fixedNowDate = eventInterval.end
+            KeystoneAnalyzer.setNowDate(eventInterval.end)
             analyzer = try! await builder.build()
         }
     }
     
     func testEventLoading() async {
-        KeystoneAnalyzer.fixedNowDate = Self.date(from: "2023-02-07T23:59:59+0000")
+        KeystoneAnalyzer.setNowDate(Self.date(from: "2023-02-07T23:59:59+0000"))
         
         let config = KeystoneConfig(userIdentifier: "ABC")
         let backend = MockBackend()

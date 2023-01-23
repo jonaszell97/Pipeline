@@ -86,6 +86,18 @@ extension Date {
         
         return Calendar.reference.date(from: components)!
     }
+    
+    /// - returns: A date representing the end of the year this date is in.
+    var endOfYear: Date {
+        var components = Calendar.reference.dateComponents([.year], from: self)
+        components.day = 31
+        components.month = 12
+        components.hour = 23
+        components.minute = 59
+        components.second = 59
+        
+        return Calendar.reference.date(from: components)!
+    }
 }
 
 internal extension DateInterval {
