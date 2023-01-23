@@ -29,14 +29,14 @@ import XCTest
         
         builder.registerCategory(name: "numericEvent") { category in
             category.registerAggregator(id: "numericEvent Count") { CountingAggregator() }
-            category.registerColumn(name: "numericValueA", aggregators: ["numericValueA Stats": { NumericStatsAggregator() }])
-            category.registerColumn(name: "numericValueB", aggregators: ["numericValueB Stats": { NumericStatsAggregator() }])
+            category.registerColumn(name: "numericValueA") { $0.registerAggregator(id: "numericValueA Stats") { NumericStatsAggregator() } }
+            category.registerColumn(name: "numericValueB") { $0.registerAggregator(id: "numericValueB Stats") { NumericStatsAggregator() } }
         }
         
         builder.registerCategory(name: "textEvent") { category in
             category.registerAggregator(id: "textEvent Count") { CountingAggregator() }
-            category.registerColumn(name: "textValueA", aggregators: ["textValueA Count By Group": { CountingByGroupAggregator() }])
-            category.registerColumn(name: "textValueB", aggregators: ["textValueB Count By Date": { CountingByDateAggregator(scope: .day) }])
+            category.registerColumn(name: "textValueA") { $0.registerAggregator(id: "textValueA Count By Group") { CountingByGroupAggregator() } }
+            category.registerColumn(name: "textValueB") { $0.registerAggregator(id: "textValueB Count By Date") { CountingByDateAggregator(scope: .day) } }
         }
         
         let builder = MockEventBuilder(userCount: userCount, eventCategories: eventCategories, using: &rng)

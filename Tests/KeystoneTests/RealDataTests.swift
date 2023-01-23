@@ -42,9 +42,9 @@ import XCTest
         }
         
         builder.registerCategory(name: "leveledUp") { category in
-            category.registerColumn(name: "level", aggregators: [
-                "leveledUpStats": { NumericStatsAggregator() },
-            ])
+            category.registerColumn(name: "level") { column in
+                column.registerAggregator(id: "leveledUpStats") { NumericStatsAggregator() }
+            }
         }
         
         let analyzer = try await builder.build()
