@@ -1,5 +1,4 @@
 
-//import AppUtilities
 import Foundation
 
 public enum AnalyzerStatus {
@@ -22,7 +21,7 @@ public enum AnalyzerStatus {
     case decodingEvents(progress: Double, source: String)
     
     /// The analyzer is processing events.
-    case processingEvents(progress: Double)
+    case processingEvents(progress: Double, detail: String? = nil)
 }
 
 fileprivate struct AggregatorProcessingInfo {
@@ -355,7 +354,8 @@ extension KeystoneAnalyzer {
         for event in events {
             assert(event.date < now, "encountered an event from the future")
             
-            await updateStatus(.processingEvents(progress: Double(processedEvents) / Double(totalEvents)))
+            await updateStatus(.processingEvents(progress: Double(processedEvents) / Double(totalEvents),
+                                                 detail: "New Aggregators"))
             processedEvents += 1
             
             let interval = Self.interval(containing: event.date)
@@ -504,7 +504,8 @@ extension KeystoneAnalyzer {
         for event in events {
             assert(event.date < now, "encountered an event from the future")
             
-            await updateStatus(.processingEvents(progress: Double(processedEvents) / Double(totalEvents)))
+            await updateStatus(.processingEvents(progress: Double(processedEvents) / Double(totalEvents),
+                                                 detail: "New Interval"))
             processedEvents += 1
             
             try await state.processEvent(event, aggregatorColumns: self.aggregatorInfo, isNewEvent: true)
@@ -864,8 +865,9 @@ extension AnalyzerStatus {
             guard case .decodingEvents(let progress_, let source_) = rhs else { return true }
             guard source != source_ else { return true }
             guard abs(progress - progress_) >= 0.01 else { return false }
-        case .processingEvents(let progress):
-            guard case .processingEvents(let progress_) = rhs else { return true }
+        case .processingEvents(let progress, let detail):
+            guard case .processingEvents(let progress_, let detail_) = rhs else { return true }
+            guard detail != detail_ else { return true }
             guard abs(progress - progress_) >= 0.01 else { return false }
         case .persistingState(let progress):
             guard case .persistingState(let progress_) = rhs else { return true }
@@ -930,8 +932,9 @@ extension AnalyzerStatus: Equatable {
             guard case .decodingEvents(let progress_, let source_) = rhs else { return false }
             guard progress == progress_ else { return false }
             guard source == source_ else { return false }
-        case .processingEvents(let progress):
-            guard case .processingEvents(let progress_) = rhs else { return false }
+        case .processingEvents(let progress, let detail):
+            guard case .processingEvents(let progress_, let detail_) = rhs else { return false }
+            guard detail == detail_ else { return false }
             guard progress == progress_ else { return false }
         default: break
         }
@@ -954,8 +957,9 @@ extension AnalyzerStatus: Hashable {
         case .decodingEvents(let progress, let source):
             hasher.combine(progress)
             hasher.combine(source)
-        case .processingEvents(let progress):
+        case .processingEvents(let progress, let detail):
             hasher.combine(progress)
+            hasher.combine(detail)
         default: break
         }
     }

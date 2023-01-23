@@ -76,7 +76,7 @@ public extension EventCategoryBuilder {
     }
     
     /// Register an event column.
-    mutating func registerColumn(name columnName: String, aggregators: [String: () -> any EventAggregator]) {
+    mutating func registerColumn(name columnName: String, aggregators: [String: () -> any EventAggregator] = [:]) {
         guard columnName != "id" else {
             fatalError("column name id is reserved")
         }
