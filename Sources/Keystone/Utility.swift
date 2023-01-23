@@ -19,7 +19,7 @@ internal extension TimeZone {
 }
 
 
-extension Date {
+internal extension Date {
     fileprivate static let secondsPerDay: TimeInterval = 24 * 60 * 60
     
     /// - returns: A date representing the start of the day this date is in.
@@ -44,7 +44,7 @@ extension Date {
         Calendar.reference.date(byAdding: DateComponents(month: 1, second: -1), to: self.startOfMonth)!
     }
     
-    public enum FirstDayOfWeek {
+    enum FirstDayOfWeek {
         case sunday, monday
     }
     

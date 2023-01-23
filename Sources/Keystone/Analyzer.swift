@@ -281,20 +281,23 @@ public extension KeystoneAnalyzer {
     // MARK: Weekly
     
     /// Get the current date interval.
-    nonisolated static func weekInterval(before: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+    nonisolated static func weekInterval(before: DateInterval, weekStartsOnMonday: Bool) -> DateInterval {
         let previous = before.start.addingTimeInterval(-24*60*60)
-        return .init(start: previous.startOfWeek(weekStartsOn: firstWeekday), end: previous.endOfWeek(weekStartsOn: firstWeekday))
+        return .init(start: previous.startOfWeek(weekStartsOn: weekStartsOnMonday ? .monday : .sunday),
+                     end: previous.endOfWeek(weekStartsOn: weekStartsOnMonday ? .monday : .sunday))
     }
     
     /// Get the current date interval.
-    nonisolated static func weekInterval(after: DateInterval, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
+    nonisolated static func weekInterval(after: DateInterval, weekStartsOnMonday: Bool) -> DateInterval {
         let next = after.end.addingTimeInterval(24*60*60)
-        return .init(start: next.startOfWeek(weekStartsOn: firstWeekday), end: next.endOfWeek(weekStartsOn: firstWeekday))
+        return .init(start: next.startOfWeek(weekStartsOn: weekStartsOnMonday ? .monday : .sunday),
+                     end: next.endOfWeek(weekStartsOn: weekStartsOnMonday ? .monday : .sunday))
     }
     
     /// Get the current date interval.
-    nonisolated static func weekInterval(containing date: Date, weekStartsOn firstWeekday: Date.FirstDayOfWeek) -> DateInterval {
-        .init(start: date.startOfWeek(weekStartsOn: firstWeekday), end: date.endOfWeek(weekStartsOn: firstWeekday))
+    nonisolated static func weekInterval(containing date: Date, weekStartsOnMonday: Bool) -> DateInterval {
+        .init(start: date.startOfWeek(weekStartsOn: weekStartsOnMonday ? .monday : .sunday),
+              end: date.endOfWeek(weekStartsOn: weekStartsOnMonday ? .monday : .sunday))
     }
     
     // MARK: Daily
