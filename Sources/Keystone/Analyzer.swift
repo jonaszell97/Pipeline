@@ -903,16 +903,16 @@ extension AnalyzerStatus {
         switch self {
         case .fetchingEvents(let count, let source):
             guard case .fetchingEvents(let count_, let source_) = rhs else { return true }
-            guard source != source_ else { return true }
+            guard source == source_ else { return true }
             // > 1% difference
             guard abs(1 - (Double(count) / Double(count_))) >= 0.01 else { return false }
         case .decodingEvents(let progress, let source):
             guard case .decodingEvents(let progress_, let source_) = rhs else { return true }
-            guard source != source_ else { return true }
+            guard source == source_ else { return true }
             guard abs(progress - progress_) >= 0.01 else { return false }
         case .processingEvents(let progress, let detail):
             guard case .processingEvents(let progress_, let detail_) = rhs else { return true }
-            guard detail != detail_ else { return true }
+            guard detail == detail_ else { return true }
             guard abs(progress - progress_) >= 0.01 else { return false }
         case .persistingState(let progress):
             guard case .persistingState(let progress_) = rhs else { return true }
