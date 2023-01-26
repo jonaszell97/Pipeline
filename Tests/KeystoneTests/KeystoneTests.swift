@@ -418,15 +418,15 @@ import XCTest
         XCTAssertNil(previous2EventCount)
         
         // Weekly interval
-        let currentWeek = KeystoneAnalyzer.weekInterval(containing: KeystoneAnalyzer.now, weekStartsOn: .monday)
+        let currentWeek = KeystoneAnalyzer.weekInterval(containing: KeystoneAnalyzer.now, weekStartsOnMonday: true)
         let currentWeekEventCount = await analyzer.getProcessedEvents(in: currentWeek)!.count
         XCTAssertLessThan(abs((2.0 / 14.0) * 1_000 - Double(currentWeekEventCount)), 1)
         
-        let lastWeek = KeystoneAnalyzer.weekInterval(before: currentWeek, weekStartsOn: .monday)
+        let lastWeek = KeystoneAnalyzer.weekInterval(before: currentWeek, weekStartsOnMonday: true)
         let lastWeekEventCount = await analyzer.getProcessedEvents(in: lastWeek)!.count
         XCTAssertLessThan(abs((7.0 / 14.0) * 1_000 - Double(lastWeekEventCount)), 1)
         
-        let twoWeeksAgo = KeystoneAnalyzer.weekInterval(before: lastWeek, weekStartsOn: .monday)
+        let twoWeeksAgo = KeystoneAnalyzer.weekInterval(before: lastWeek, weekStartsOnMonday: true)
         let twoWeeksAgoEventCount = await analyzer.getProcessedEvents(in: twoWeeksAgo)!.count
         XCTAssertLessThan(abs((5.0 / 14.0) * 1_000 - Double(twoWeeksAgoEventCount)), 1)
         

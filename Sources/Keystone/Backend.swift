@@ -13,8 +13,11 @@ public enum BackendStatus {
 }
 
 public protocol KeystoneBackend {
-    /// Persist an event ot the backend.
+    /// Persist an event to the backend.
     func persist(event: KeystoneEvent) async throws
+    
+    /// Persist a list of events to the backend.
+    func persist(events: [KeystoneEvent]) async throws
     
     /// Load all events.
     func loadAllEvents(updateStatus: @escaping (BackendStatus) -> Void) async throws -> [KeystoneEvent]
@@ -28,6 +31,13 @@ public extension KeystoneBackend {
     /// Load all events.
     func loadAllEvents(updateStatus: @escaping (BackendStatus) -> Void) async throws -> [KeystoneEvent] {
         try await self.loadEvents(in: .init(start: .distantPast, end: .distantFuture), updateStatus: updateStatus)
+    }
+    
+    /// Persist a list of events to the backend.
+    func persist(events: [KeystoneEvent]) async throws {
+        for event in events {
+            try await self.persist(event: event)
+        }
     }
 }
 
@@ -126,6 +136,28 @@ extension CloudKitBackend {
         try populateRecord(record, for: event)
         
         try await container.publicCloudDatabase.save(record)
+    }
+    
+    /// Submit multiple events to CloudKit.
+    public func persist(events: [KeystoneEvent]) async throws {
+        guard case .available = self.accountStatus else {
+            config.log?(.debug, "early exit in persist(event:) because account status is \(self.accountStatus)")
+            throw CKError(.accountTemporarilyUnavailable)
+        }
+        
+        let records = try events.map { event in
+            let record = CKRecord(recordType: self.tableName, recordID: .init(recordName: event.id.uuidString))
+            try populateRecord(record, for: event)
+            
+            return record
+        }
+        
+        let (saveResults, _) = try await container.publicCloudDatabase.modifyRecords(saving: records, deleting: [])
+        for (id, result) in saveResults {
+            if case .failure(let error) = result {
+                config.log?(.error, "error saving record with ID \(id): \(error.localizedDescription)")
+            }
+        }
     }
 }
 
