@@ -134,7 +134,7 @@ public struct KeystoneAggregatorState {
     
     /// The unique key for this state.
     public static func key(for interval: DateInterval) -> String {
-        "analytics-state-\(self.formatDate(interval.start))-\(self.formatDate(interval.end))"
+        "state-\(self.formatDate(interval.start))-\(self.formatDate(interval.end))"
     }
     
     /// Memberwise initializer.

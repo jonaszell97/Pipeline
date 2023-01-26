@@ -759,7 +759,7 @@ extension KeystoneAnalyzer {
     }
     
     private static func eventsKey(for interval: DateInterval) -> String {
-        "analytics-events-\(formatDate(interval.start))-\(formatDate(interval.end))"
+        "events-\(formatDate(interval.start))-\(formatDate(interval.end))"
     }
     
     /// Persist the given events.
