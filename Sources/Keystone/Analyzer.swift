@@ -461,7 +461,7 @@ extension KeystoneAnalyzer {
         }
         
         // Use as many events from cache as possible
-        if var cachedEvents = await self.getProcessedEvents(in: interval) {
+        if var cachedEvents = await self.getProcessedEvents(in: interval), !cachedEvents.isEmpty {
             config.log?(.debug, "loaded \(cachedEvents.count) events from cache")
             
             let cachedEventsInterval = DateInterval(start: cachedEvents.first!.date, end: cachedEvents.last!.date)
