@@ -68,6 +68,12 @@ fileprivate struct AggregatorProcessingInfo {
 ///     in: KeystoneAnalyzer.currentEventInterval)
 /// ```
 ///
+/// Querying the analyzer can take some time, especially if there are multiple thousands of events to process.
+/// `KeystoneAnalyzer` periodically calls the delegate's ``KeystoneDelegate/statusChanged(to:)-8o993``
+/// method to inform it about the current processing status. While the analyzer's processing takes place on a background thread,
+/// this method is always called on the main actor and can be used to update the UI in your App, for example to inform
+/// the user about the current status.
+///
 /// You can also fetch a list of events that were submitted within a given time interval.
 ///
 /// ```swift

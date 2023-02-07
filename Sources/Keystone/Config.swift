@@ -41,7 +41,7 @@ public struct AggregatorMeta {
     }
 }
 
-/// Create event categories with a ``KeystoneAnalyzer`` with this builder type.
+/// Register event categories with a ``KeystoneAnalyzer`` using this builder type.
 ///
 /// You should not create instances of this type directly. Instead, use ``KeystoneAnalyzerBuilder/registerCategory(name:modify:)``.
 public struct EventCategoryBuilder {
@@ -133,7 +133,7 @@ public struct EventCategory {
     }
 }
 
-/// Create event columns for a ``EventCategory`` instance with this builder type.
+/// Create event columns for an ``EventCategory`` instance using this builder type.
 ///
 /// You should not create instances of this type directly. Instead, use ``EventCategoryBuilder/registerColumn(name:modify:)``.
 public struct EventColumnBuilder {
