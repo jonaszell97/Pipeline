@@ -600,6 +600,72 @@ open class CountingByGroupAggregator: EventAggregator {
     public var valueCount: Int { self.groupedValues.values.reduce(0) { $0 + $1 } }
 }
 
+// MARK: ChainingByGroupAggregator
+
+/// Groups events by a given value and forwards them to a unique aggregator that only receives events with that specific value.
+public class ChainingByGroupAggregator: EventAggregator {
+    /// The name of the column that contains the value this aggregator should group by.
+    let groupColumnName: String?
+    
+    /// The grouped aggregators.
+    public private(set) var groupedAggregators: [KeystoneEventData: any EventAggregator]
+    
+    /// Function to instantiate a new destination aggregator.
+    let instantiateAggregator: () -> any EventAggregator
+    
+    /// Create a chaining aggregator.
+    ///
+    /// - Parameters:
+    ///   - groupColumnName: The name of the column that contains the value this aggregator should group by.
+    ///   - instantiateAggregator: Function to instantiate a new destination aggregator.
+    public init(groupColumnName: String? = nil, instantiateAggregator: @escaping () -> any EventAggregator) {
+        self.groupedAggregators = [:]
+        self.groupColumnName = groupColumnName
+        self.instantiateAggregator = instantiateAggregator
+    }
+    
+    public func reset() {
+        groupedAggregators = [:]
+    }
+    
+    public func addEvent(_ event: KeystoneEvent, column: EventColumn?) -> EventProcessingResult {
+        guard let columnName = self.groupColumnName ?? column?.name else {
+            return .discard
+        }
+        guard let datum = event.data[columnName] else {
+            return .keep
+        }
+        
+        self.groupedAggregators.modify(key: datum, defaultValue: instantiateAggregator()) { _ = $0.addEvent(event, column: column) }
+        return .keep
+    }
+    
+    public var debugDescription: String {
+        "ChainingByGroupAggregator()"
+    }
+    
+    private struct CodableState: Codable {
+        let eventData: KeystoneEventData
+        let aggregatorState: Data?
+    }
+    
+    public func encode() throws -> Data? {
+        try JSONEncoder().encode(try self.groupedAggregators.map { CodableState(eventData: $0.key, aggregatorState: try $0.value.encode()) })
+    }
+    
+    public func decode(from data: Data) throws {
+        let states = try JSONDecoder().decode([CodableState].self, from: data)
+        for state in states {
+            let aggregator = instantiateAggregator()
+            if let data = state.aggregatorState {
+                try aggregator.decode(from: data)
+            }
+            
+            self.groupedAggregators[state.eventData] = aggregator
+        }
+    }
+}
+
 // MARK: DateAggregator
 
 /// The granularity with which a DateAggregator groups its events.

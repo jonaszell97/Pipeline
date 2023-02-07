@@ -414,7 +414,7 @@ import XCTest
         XCTAssertEqual(500, previousEventCount)
         
         let previous2EventCount = await analyzer.getProcessedEvents(in:
-            KeystoneAnalyzer.interval(before: KeystoneAnalyzer.interval(before: KeystoneAnalyzer.currentEventInterval)))?.count
+                                                                        KeystoneAnalyzer.interval(before: KeystoneAnalyzer.interval(before: KeystoneAnalyzer.currentEventInterval)))?.count
         XCTAssertNil(previous2EventCount)
         
         // Weekly interval
@@ -437,5 +437,45 @@ import XCTest
             let eventCount = await analyzer.getProcessedEvents(in: interval)!.count
             XCTAssertLessThan(abs((1.0 / 14.0) * 1_000 - Double(eventCount)), 1)
         }
+    }
+    
+    func testChainingByGroupAggregator() async {
+        let config = KeystoneConfig(userIdentifier: "ABC")
+        let backend = MockBackend()
+        let delegate = MockDelegate()
+        let client = KeystoneClient(config: config, backend: backend)
+        
+        var builder = KeystoneAnalyzerBuilder(config: config, backend: backend, delegate: delegate)
+        builder.registerCategory(name: "testEvent") { category in
+            category.registerColumn(name: "group") { column in
+                column.registerAggregator(id: "Group Counter") {
+                    ChainingByGroupAggregator { CountingAggregator() }
+                }
+            }
+        }
+        
+        KeystoneAnalyzer.setNowDate(Self.date(from: "2023-01-25T23:59:59+0000"))
+        let events = [
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "A"),]),
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "A"),]),
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "B"),]),
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "C"),]),
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "C"),]),
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "C"),]),
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "D"),]),
+            client.createEvent(category: "testEvent", data: ["group": .text(value: "D"),]),
+        ]
+        
+        KeystoneAnalyzer.setNowDate(Self.date(from: "2023-02-07T23:59:59+0000"))
+        backend.mockEvents = events
+        
+        let analyzer = try! await builder.build()
+        let aggregator = try! await analyzer.findAggregator(withId: "Group Counter", in: KeystoneAnalyzer.allEncompassingDateInterval)
+        let counter = aggregator as! ChainingByGroupAggregator
+        
+        XCTAssertEqual((counter.groupedAggregators[.text(value: "A")]! as! CountingAggregator).valueCount, 2)
+        XCTAssertEqual((counter.groupedAggregators[.text(value: "B")]! as! CountingAggregator).valueCount, 1)
+        XCTAssertEqual((counter.groupedAggregators[.text(value: "C")]! as! CountingAggregator).valueCount, 3)
+        XCTAssertEqual((counter.groupedAggregators[.text(value: "D")]! as! CountingAggregator).valueCount, 2)
     }
 }

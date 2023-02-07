@@ -84,6 +84,7 @@ To speed up the data processing, `KeystoneAnalyzer` will ask the provided `Keyst
 - ``MappingAggregator``
 - ``GroupingAggregator``
 - ``CountingByGroupAggregator``
+- ``ChainingByGroupAggregator``
 - ``DateAggregatorScope``
 - ``DateAggregator``
 - ``CountingByDateAggregator``
