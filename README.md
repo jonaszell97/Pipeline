@@ -4,7 +4,7 @@ Keystone is an event processing library for Swift apps that handles event submis
 
 ## Installation
 
-Panorama can be added as a dependency in your project using Swift Package Manager.
+Keystone can be added as a dependency in your project using Swift Package Manager.
 
 ```swift
 // ...

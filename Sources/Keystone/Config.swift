@@ -10,14 +10,22 @@ public struct KeystoneConfig {
     /// Custom logging function.
     public var log: Optional<(OSLogType, String) -> Void> = nil
     
+    /// Whether or not a search index for events should be created.
+    public var createSearchIndex: Bool
+    
+    /// Function used to extract search keywords from an event.
+    public var getSearchKeywords: Optional<(KeystoneEvent, inout Set<String>) -> Void> = nil
+    
     /// Create a configuration instance.
     ///
     /// - Parameters:
     ///   - userIdentifier: The unique identifier for the current user.
     ///   - log: Custom logging function. Set this parameter if you want to be informed of internal `Keystone` messages.
     public init(userIdentifier: String,
+                createSearchIndex: Bool = false,
                 log: Optional<(OSLogType, String) -> Void> = nil) {
         self.userIdentifier = userIdentifier
+        self.createSearchIndex = createSearchIndex
         self.log = log
     }
 }
