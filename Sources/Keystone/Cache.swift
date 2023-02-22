@@ -213,7 +213,8 @@ extension KeystoneEventList {
             }
         }
         
-        return KeystoneEventList(interval: interval, events: events, searchIndex: KeystoneSearchIndex(keywordMap: keywordsMap))
+        return KeystoneEventList(interval: interval, events: events,
+                                 searchIndex: KeystoneSearchIndex(interval: interval, keywordMap: keywordsMap))
     }
 }
 
@@ -306,7 +307,7 @@ extension KeystoneEventList: Codable {
         self.init(
             interval: try container.decode(DateInterval.self, forKey: .interval),
             events: try container.decode(Array<KeystoneEvent>.self, forKey: .events),
-            searchIndex: try container.decode(KeystoneSearchIndex?.self, forKey: .searchIndex)
+            searchIndex: try? container.decode(KeystoneSearchIndex?.self, forKey: .searchIndex)
         )
     }
 }

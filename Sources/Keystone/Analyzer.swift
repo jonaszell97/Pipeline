@@ -842,10 +842,15 @@ extension KeystoneAnalyzer {
             return
         }
         
-        let persist: ([KeystoneEvent], DateInterval) async -> Void = { events, interval in
+        let persist: ([KeystoneEvent], DateInterval, KeystoneSearchIndex?) async -> Void = { events, interval, existingIndex in
             let searchIndex: KeystoneSearchIndex?
-            if self.config.createSearchIndex {
-                searchIndex = await self.createSearchIndex(for: events)
+            if self.config.createSearchIndex, !events.isEmpty {
+                if let existingIndex {
+                    searchIndex = await self.updateSearchIndex(searchIndex: existingIndex, events: events)
+                }
+                else {
+                    searchIndex = await self.createSearchIndex(for: events)
+                }
             }
             else {
                 searchIndex = nil
@@ -859,7 +864,8 @@ extension KeystoneAnalyzer {
         let totalEventCount = events.count
         
         var currentInterval: DateInterval = Self.interval(containing: events[0].date)
-        var currentIntervalEvents = await self.getProcessedEvents(in: currentInterval)?.events ?? []
+        var currentIntervalEventList = await self.getProcessedEvents(in: currentInterval)
+        var currentIntervalEvents = currentIntervalEventList?.events ?? []
         
         var currentIntervalEventCount = currentIntervalEvents.count
         var currentIntervalEventIds = Set(currentIntervalEvents.map { $0.id })
@@ -872,11 +878,13 @@ extension KeystoneAnalyzer {
             if eventInterval != currentInterval {
                 // Only persist if there were changes
                 if currentIntervalEventCount != currentIntervalEvents.count {
-                    await persist(currentIntervalEvents, currentInterval)
+                    await persist(currentIntervalEvents, currentInterval, currentIntervalEventList?.searchIndex)
                 }
                 
                 currentInterval = eventInterval
-                currentIntervalEvents = await self.getProcessedEvents(in: currentInterval)?.events ?? []
+                currentIntervalEventList = await self.getProcessedEvents(in: currentInterval)
+                currentIntervalEvents = currentIntervalEventList?.events ?? []
+                
                 currentIntervalEventCount = currentIntervalEvents.count
                 currentIntervalEventIds = Set(currentIntervalEvents.map { $0.id })
             }
@@ -888,7 +896,7 @@ extension KeystoneAnalyzer {
             currentIntervalEvents.append(event)
         }
         
-        await persist(currentIntervalEvents, currentInterval)
+        await persist(currentIntervalEvents, currentInterval, currentIntervalEventList?.searchIndex)
     }
     
     /// Fetch the events in the given interval from the delegate.

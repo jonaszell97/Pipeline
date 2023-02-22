@@ -6,6 +6,9 @@ import Foundation
 /// Search indices are created and updated by ``KeystoneAnalyzer``, and persisted by ``KeystoneDelegate``.
 /// With a search index you can perform fast keyword searches in a list of events.
 public struct KeystoneSearchIndex {
+    /// The date interval this search index is valid for.
+    let interval: DateInterval
+    
     /// Map from keywords to sets of event IDs that contain the keyword.
     let keywordMap: [String: Set<UUID>]
     
@@ -13,7 +16,8 @@ public struct KeystoneSearchIndex {
     let predicate: (String, KeystoneEvent) -> Bool
     
     /// Create an empty search index.
-    init(keywordMap: [String: Set<UUID>]) {
+    init(interval: DateInterval, keywordMap: [String: Set<UUID>]) {
+        self.interval = interval
         self.keywordMap = keywordMap
         self.predicate = Self.createSearchPredicate(keywordMap: keywordMap)
     }
@@ -68,13 +72,17 @@ extension KeystoneAnalyzer {
     static let searchIndexKey: String = "keystone-search-index"
     
     /// Update the search index for new events.
-    func createSearchIndex(for events: [KeystoneEvent]) async -> KeystoneSearchIndex {
+    func createSearchIndex(for events: [KeystoneEvent],
+                           keywordMap: [String: Set<UUID>] = [:],
+                           interval: DateInterval? = nil) async -> KeystoneSearchIndex {
+        assert(!events.isEmpty, "KeystoneAnalyzer.createSearchIndex should not be called with an empty event list")
+        
         let previousStatus = self.status
         await updateStatus(.updatingSearchIndex(progress: 0))
         
         let totalEventCount = Double(events.count)
         
-        var keywordMap: [String: Set<UUID>] = [:]
+        var keywordMap = keywordMap
         var keywords = Set<String>()
         
         for (index, event) in events.enumerated() {
@@ -107,7 +115,22 @@ extension KeystoneAnalyzer {
         }
         
         await updateStatus(previousStatus)
-        return KeystoneSearchIndex(keywordMap: keywordMap)
+        
+        let interval = interval ?? DateInterval(start: events.first!.date, end: events.last!.date)
+        return KeystoneSearchIndex(interval: interval, keywordMap: keywordMap)
+    }
+    
+    /// Update an existing search index.
+    func updateSearchIndex(searchIndex: KeystoneSearchIndex, events: [KeystoneEvent]) async -> KeystoneSearchIndex {
+        let interval = DateInterval(start: min(events.first!.date, searchIndex.interval.start),
+                                    end: max(events.last!.date, searchIndex.interval.end))
+        
+        let events = events.filter { !searchIndex.interval.contains($0.date) }
+        guard !events.isEmpty else {
+            return searchIndex
+        }
+        
+        return await self.createSearchIndex(for: events, keywordMap: searchIndex.keywordMap, interval: interval)
     }
 }
 
@@ -115,17 +138,19 @@ extension KeystoneAnalyzer {
 
 extension KeystoneSearchIndex: Codable {
     enum CodingKeys: String, CodingKey {
-        case keywordMap
+        case interval, keywordMap
     }
     
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(interval, forKey: .interval)
         try container.encode(keywordMap, forKey: .keywordMap)
     }
     
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
+            interval: try container.decode(DateInterval.self, forKey: .interval),
             keywordMap: try container.decode(Dictionary<String, Set<UUID>>.self, forKey: .keywordMap)
         )
     }
@@ -134,6 +159,7 @@ extension KeystoneSearchIndex: Codable {
 extension KeystoneSearchIndex: Equatable {
     public static func ==(lhs: KeystoneSearchIndex, rhs: KeystoneSearchIndex) -> Bool {
         return (
+            lhs.interval == rhs.interval &&
             lhs.keywordMap == rhs.keywordMap
         )
     }
@@ -141,6 +167,7 @@ extension KeystoneSearchIndex: Equatable {
 
 extension KeystoneSearchIndex: Hashable {
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(interval)
         hasher.combine(keywordMap)
     }
 }
