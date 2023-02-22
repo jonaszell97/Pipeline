@@ -818,7 +818,7 @@ extension KeystoneAnalyzer {
 #else
 
 extension KeystoneAnalyzer {
-    static var now: Date { Date.now }
+    nonisolated static var now: Date { Date.now }
 }
 
 #endif
