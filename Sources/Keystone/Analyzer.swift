@@ -16,10 +16,10 @@ public enum AnalyzerStatus {
     case persistingState(progress: Double)
     
     /// The analyzer is fetching events.
-    case fetchingEvents(count: Int, source: String)
+    case fetchingEvents(count: Int, source: String, interval: DateInterval)
     
     /// The analyzer is decoding events.
-    case decodingEvents(progress: Double, source: String)
+    case decodingEvents(progress: Double, source: String, interval: DateInterval)
     
     /// The analyzer is processing events.
     case processingEvents(progress: Double, detail: String? = nil)
@@ -403,6 +403,8 @@ extension KeystoneAnalyzer {
             return
         }
         
+        config.log?(.debug, "processEvents: \(events.count) events, \(first.date) - \(last.date)")
+        
         let now = KeystoneAnalyzer.now
         let previousStatus = self.status
         
@@ -506,7 +508,8 @@ extension KeystoneAnalyzer {
     
     /// Load and process all events.
     func loadAndProcessAllHistory() async throws {
-        try await self.loadAndProcessEvents(in: .init(start: .distantPast, end: Self.now))
+        let interval = DateInterval(start: config.earliestPossibleEventDate, end: Self.now)
+        try await self.loadAndProcessEventsChunked(in: interval, maxIntervalDuration: config.maximumEventFetchBatchDuration)
     }
     
     /// Load and process new events.
@@ -514,7 +517,25 @@ extension KeystoneAnalyzer {
         let processedEventInterval = self.state.processedEventInterval
         let newEventInterval = DateInterval(start: processedEventInterval.end, end: Self.now)
         
-        try await self.loadAndProcessEvents(in: newEventInterval)
+        try await self.loadAndProcessEventsChunked(in: newEventInterval, maxIntervalDuration: config.maximumEventFetchBatchDuration)
+    }
+    
+    /// Load and proess events in an interval chunked by months.
+    func loadAndProcessEventsChunked(in newEventInterval: DateInterval, maxIntervalDuration: TimeInterval) async throws {
+        // If the time interval is bigger than one month, split it up into multiple steps
+        if newEventInterval.duration > maxIntervalDuration {
+            var currentInterval = DateInterval(start: newEventInterval.start, duration: maxIntervalDuration)
+            while currentInterval.end < newEventInterval.end {
+                try await self.loadAndProcessEvents(in: currentInterval)
+                
+                let remainingDuration = newEventInterval.end.timeIntervalSince(currentInterval.end)
+                currentInterval = DateInterval(start: currentInterval.end,
+                                               duration: min(remainingDuration, maxIntervalDuration))
+            }
+        }
+        else {
+            try await self.loadAndProcessEvents(in: newEventInterval)
+        }
     }
     
     /// Load and process new events.
@@ -525,20 +546,22 @@ extension KeystoneAnalyzer {
                 break
             case .fetchedRecords(let count):
                 Task {
-                    await self.updateStatus(.fetchingEvents(count: count, source: "backend"))
+                    await self.updateStatus(.fetchingEvents(count: count, source: "backend", interval: interval))
                 }
             case .processingRecords(let progress):
                 Task {
-                    await self.updateStatus(.decodingEvents(progress: progress, source: "backend"))
+                    await self.updateStatus(.decodingEvents(progress: progress, source: "backend", interval: interval))
                 }
             }
         }
         
+        config.log?(.debug, "loadAndProcessEvents \(ObjectIdentifier(self)) \(interval.start) - \(interval.end)")
+        
         // Use as many events from cache as possible
         if var cachedEvents = await self.getProcessedEvents(in: interval)?.events, !cachedEvents.isEmpty {
-            config.log?(.debug, "loaded \(cachedEvents.count) events from cache")
-            
             let cachedEventsInterval = DateInterval(start: cachedEvents.first!.date, end: cachedEvents.last!.date)
+            config.log?(.debug, "loaded \(cachedEvents.count) events from cache in \(cachedEventsInterval.start) - \(cachedEventsInterval.end)")
+            
             
             // Load earlier events
             if interval.start < cachedEventsInterval.start {
@@ -549,7 +572,7 @@ extension KeystoneAnalyzer {
                 
                 // Persist the events
                 await persistEvents(earlierEvents)
-                config.log?(.debug, "loaded \(earlierEvents.count) earlier events")
+                config.log?(.debug, "loaded \(earlierEvents.count) earlier events from \(interval.start) - \(cachedEventsInterval.start)")
             }
             
             // Load later events
@@ -561,7 +584,7 @@ extension KeystoneAnalyzer {
                 
                 // Persist the events
                 await persistEvents(laterEvents)
-                config.log?(.debug, "loaded \(laterEvents.count) later events")
+                config.log?(.debug, "loaded \(laterEvents.count) later events from \(cachedEventsInterval.end) - \(interval.end)")
             }
             
             try await self.processEvents(cachedEvents)
@@ -904,15 +927,17 @@ extension KeystoneAnalyzer {
     /// - Parameter interval: The interval within which to fetch events.
     /// - Returns: The events fetched from the delegate, or `nil` if they were not found.
     public func getProcessedEvents(in interval: DateInterval) async -> KeystoneEventList? {
+        config.log?(.debug, "getProcessedEvents \(ObjectIdentifier(self)) \(interval.start) - \(interval.end)")
+        
         if Self.isNormalized(interval) && interval != Self.allEncompassingDateInterval {
+            config.log?(.debug, "getProcessedEvents \(ObjectIdentifier(self)) normalized")
             return await delegate.load(KeystoneEventList.self, withKey: Self.eventsKey(for: interval))
         }
         
-        let previousStatus = self.status
-        await updateStatus(.fetchingEvents(count: 0, source: "cache"))
+        config.log?(.debug, "getProcessedEvents \(ObjectIdentifier(self)) not normalized")
         
-        let interval = DateInterval(start: max(interval.start, self.state.processedEventInterval.start),
-                                    end: min(interval.end, self.state.processedEventInterval.end))
+        let previousStatus = self.status
+        await updateStatus(.fetchingEvents(count: 0, source: "cache", interval: interval))
         
         var allEvents = [KeystoneEventList]()
         var currentInterval = Self.interval(containing: interval.end)
@@ -928,8 +953,10 @@ extension KeystoneAnalyzer {
             foundAnyEvents = true
             allEvents.append(eventList)
             
-            await updateStatus(.fetchingEvents(count: allEvents.count, source: "cache"))
+            await updateStatus(.fetchingEvents(count: allEvents.count, source: "cache", interval: interval))
         }
+        
+        config.log?(.debug, "getProcessedEvents \(ObjectIdentifier(self)) \(foundAnyEvents) \(allEvents.count)")
         
         guard foundAnyEvents else {
             return nil
@@ -1024,14 +1051,17 @@ public extension KeystoneAnalyzerBuilder {
 extension AnalyzerStatus {
     func isSignificantlyDifferentFrom(_ rhs: AnalyzerStatus) -> Bool {
         switch self {
-        case .fetchingEvents(let count, let source):
-            guard case .fetchingEvents(let count_, let source_) = rhs else { return true }
+        case .fetchingEvents(let count, let source, let interval):
+            guard case .fetchingEvents(let count_, let source_, let interval_) = rhs else { return true }
             guard source == source_ else { return true }
+            guard interval == interval_ else { return true }
+            
             // > 1% difference
             guard abs(1 - (Double(count) / Double(count_))) >= 0.01 else { return false }
-        case .decodingEvents(let progress, let source):
-            guard case .decodingEvents(let progress_, let source_) = rhs else { return true }
+        case .decodingEvents(let progress, let source, let interval):
+            guard case .decodingEvents(let progress_, let source_, let interval_) = rhs else { return true }
             guard source == source_ else { return true }
+            guard interval == interval_ else { return true }
             guard abs(progress - progress_) >= 0.01 else { return false }
         case .processingEvents(let progress, let detail):
             guard case .processingEvents(let progress_, let detail_) = rhs else { return true }
@@ -1097,14 +1127,16 @@ extension AnalyzerStatus: Equatable {
         case .persistingState(let progress):
             guard case .persistingState(let progress_) = rhs else { return false }
             guard progress == progress_ else { return false }
-        case .fetchingEvents(let count, let source):
-            guard case .fetchingEvents(let count_, let source_) = rhs else { return false }
+        case .fetchingEvents(let count, let source, let interval):
+            guard case .fetchingEvents(let count_, let source_, let interval_) = rhs else { return false }
             guard count == count_ else { return false }
             guard source == source_ else { return false }
-        case .decodingEvents(let progress, let source):
-            guard case .decodingEvents(let progress_, let source_) = rhs else { return false }
+            guard interval == interval_ else { return false }
+        case .decodingEvents(let progress, let source, let interval):
+            guard case .decodingEvents(let progress_, let source_, let interval_) = rhs else { return false }
             guard progress == progress_ else { return false }
             guard source == source_ else { return false }
+            guard interval == interval_ else { return false }
         case .processingEvents(let progress, let detail):
             guard case .processingEvents(let progress_, let detail_) = rhs else { return false }
             guard detail == detail_ else { return false }
@@ -1127,12 +1159,14 @@ extension AnalyzerStatus: Hashable {
             hasher.combine(progress)
         case .persistingState(let progress):
             hasher.combine(progress)
-        case .fetchingEvents(let count, let source):
+        case .fetchingEvents(let count, let source, let interval):
             hasher.combine(count)
             hasher.combine(source)
-        case .decodingEvents(let progress, let source):
+            hasher.combine(interval)
+        case .decodingEvents(let progress, let source, let interval):
             hasher.combine(progress)
             hasher.combine(source)
+            hasher.combine(interval)
         case .processingEvents(let progress, let detail):
             hasher.combine(progress)
             hasher.combine(detail)

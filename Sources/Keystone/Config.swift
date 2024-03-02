@@ -16,6 +16,12 @@ public struct KeystoneConfig {
     /// Function used to extract search keywords from an event.
     public var getSearchKeywords: Optional<(KeystoneEvent, inout Set<String>) -> Void> = nil
     
+    /// The earliest possible date that an event can take place.
+    public var earliestPossibleEventDate = Date.distantPast
+    
+    /// The maximum interval in which events are fetched in one batch.
+    public var maximumEventFetchBatchDuration: TimeInterval
+    
     /// Create a configuration instance.
     ///
     /// - Parameters:
@@ -23,9 +29,13 @@ public struct KeystoneConfig {
     ///   - log: Custom logging function. Set this parameter if you want to be informed of internal `Keystone` messages.
     public init(userIdentifier: String,
                 createSearchIndex: Bool = false,
+                earliestPossibleEventDate: Date = Date.distantPast,
+                maximumEventFetchBatchDuration: TimeInterval = 30 * 24 * 60 * 60,
                 log: Optional<(OSLogType, String) -> Void> = nil) {
         self.userIdentifier = userIdentifier
         self.createSearchIndex = createSearchIndex
+        self.earliestPossibleEventDate = earliestPossibleEventDate
+        self.maximumEventFetchBatchDuration = maximumEventFetchBatchDuration
         self.log = log
     }
 }
